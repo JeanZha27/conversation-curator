@@ -1,0 +1,38 @@
+{
+  "name": "conversation-curator",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "packageManager": "pnpm@11.19.0",
+  "bin": {
+    "conversation-curator": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "docs",
+    "README.md",
+    "LICENSE",
+    "PRIVACY.md",
+    "SECURITY.md"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node src/cli.ts",
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "check": "pnpm typecheck && pnpm test && pnpm build",
+    "benchmark:memory": "node scripts/memory-benchmark.ts",
+    "compatibility:private": "node scripts/compatibility-check.ts",
+    "pack:check": "pnpm pack --dry-run --json",
+    "package:smoke": "node scripts/package-smoke.ts",
+    "prepack": "node node_modules/typescript/bin/tsc -p tsconfig.build.json"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.4",
+    "typescript": "7.0.2"
+  }
+}

@@ -1,0 +1,7 @@
+*.tmp
+*.report.json
+coverage/
+dist/
+node_modules/
+*.tgz
+/.private-test-data/

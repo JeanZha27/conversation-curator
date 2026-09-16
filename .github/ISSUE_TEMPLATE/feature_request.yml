@@ -1,0 +1,36 @@
+name: Feature request
+description: Propose a product improvement without sharing private data
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Do not upload conversation exports, real conversation text, reports, access tokens, personal data, or unredacted logs.** Describe the use case with synthetic examples only.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy confirmation
+      options:
+        - label: I confirm this request contains only synthetic examples and no private data.
+          required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: Explain the user problem without including real conversation content.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+    validations:
+      required: true
+  - type: textarea
+    id: privacy-impact
+    attributes:
+      label: Privacy and offline impact
+      description: State whether the proposal needs network, storage, model, or platform access.
+    validations:
+      required: true
