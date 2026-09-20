@@ -25,6 +25,8 @@ pnpm typecheck
 pnpm test
 pnpm build
 pnpm benchmark:memory -- --items 50000 --max-rss-mib 256
+pnpm benchmark:input-limit
+pnpm benchmark:large-items
 pnpm pack:check
 pnpm package:smoke
 ```
@@ -39,7 +41,15 @@ A missing private sample is a blocked check, not a passing or skipped check. A s
 
 Pull requests should explain the changed user behavior, privacy impact, test evidence, and any unverified assumption. Do not weaken output validation, sensitive scanning, source-file immutability, or failure visibility to make tests pass.
 
-CI also scans complete Git history with Gitleaks. Intentional synthetic detector fixtures must be
-clearly marked on the same line with `gitleaks:allow`; never suppress an entire test directory or use
-an allowlist for a real-looking value. Organization-owned repositories may need a private
+CI also scans complete Git history with Gitleaks. An intentional synthetic detector fixture may use
+`gitleaks:allow` only after review and exact-line approval in the repository policy manifest. Never
+suppress an entire test directory or use an allowlist for a real-looking value. The root Gitleaks
+configuration contains only full-line historical synthetic fixtures; do not broaden it to a
+directory, commit, rule, or generic credential shape.
+The complete `.gitleaks.toml` is SHA-256 pinned in `scripts/approved-gitleaks-config.ts`.
+Review every effective allowlist change before updating that digest; never regenerate it automatically.
+When a marked fixture changes, verify the full new line contains only synthetic material before
+updating its path-and-line SHA-256 digest in `scripts/approved-synthetic-markers.ts`. Do not
+regenerate or approve all markers automatically; the digest change is a security review point.
+Organization-owned repositories may need a private
 `GITLEAKS_LICENSE` repository secret for the Action to run.

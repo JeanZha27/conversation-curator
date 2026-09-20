@@ -17,8 +17,19 @@ function integerArgument(name: string, fallback: number): number {
   return value;
 }
 
+function nonNegativeIntegerArgument(name: string, fallback: number): number {
+  const index = process.argv.indexOf(name);
+  if (index === -1) return fallback;
+  const value = Number(process.argv[index + 1]);
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`${name} must be a non-negative integer`);
+  }
+  return value;
+}
+
 const itemCount = integerArgument("--items", 50_000);
 const maxRssMiB = integerArgument("--max-rss-mib", 256);
+const payloadBytes = nonNegativeIntegerArgument("--payload-bytes", 0);
 const directory = await mkdtemp(join(tmpdir(), "curator-memory-benchmark-"));
 const inputPath = join(directory, "conversations.json");
 const outputPath = join(directory, "report.json");
@@ -35,7 +46,10 @@ try {
         mapping: {
           question: {
             parent: null,
-            message: { create_time: 1, content: { parts: [`编写本地测试 ${index}`] } },
+            message: {
+              create_time: 1,
+              content: { parts: [`编写本地测试 ${index} ${"x".repeat(payloadBytes)}`] },
+            },
           },
           answer: {
             parent: "question",
@@ -53,25 +67,41 @@ try {
   const startedAt = performance.now();
   const worker = await execFileAsync(
     process.execPath,
-    [fileURLToPath(new URL("memory-worker.ts", import.meta.url)), inputPath, outputPath],
+    [
+      "--max-old-space-size=96",
+      "--max-semi-space-size=2",
+      fileURLToPath(new URL("memory-worker.ts", import.meta.url)),
+      inputPath,
+      outputPath,
+    ],
     { maxBuffer: 1024 * 1024 },
   );
   const durationMs = performance.now() - startedAt;
   const measurement = JSON.parse(worker.stdout) as {
     peakRssBytes: number;
-    summary: { classified: number };
+    peakHeapUsedBytes: number;
+    peakHeapTotalBytes: number;
+    peakExternalBytes: number;
+    failureCodes: string[];
+    summary: { classified: number; failed: number };
   };
   const inputBytes = (await stat(inputPath)).size;
   const outputBytes = (await stat(outputPath)).size;
   const peakRssMiB = measurement.peakRssBytes / 1024 / 1024;
   const result = {
     itemCount,
+    payloadBytes,
     inputBytes,
     outputBytes,
     durationMs: Math.round(durationMs),
     peakRssMiB: Number(peakRssMiB.toFixed(1)),
+    peakHeapUsedMiB: Number((measurement.peakHeapUsedBytes / 1024 / 1024).toFixed(1)),
+    peakHeapTotalMiB: Number((measurement.peakHeapTotalBytes / 1024 / 1024).toFixed(1)),
+    peakExternalMiB: Number((measurement.peakExternalBytes / 1024 / 1024).toFixed(1)),
     limitMiB: maxRssMiB,
     classified: measurement.summary.classified,
+    failed: measurement.summary.failed,
+    failureCodes: measurement.failureCodes,
     passed: peakRssMiB <= maxRssMiB && measurement.summary.classified === itemCount,
   };
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);

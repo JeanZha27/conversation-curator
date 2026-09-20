@@ -74,9 +74,19 @@ export const TAXONOMY: readonly Category[] = [
   },
 ] as const;
 
-export const ACTIVE_TAXONOMY_IDS = new Set(
+for (const category of TAXONOMY) {
+  Object.freeze(category.keywords);
+  Object.freeze(category);
+}
+Object.freeze(TAXONOMY);
+
+const ACTIVE_TAXONOMY_IDS = new Set(
   TAXONOMY.filter((category) => !category.deprecated).map((category) => category.id),
 );
+
+export function isActiveTaxonomyId(id: string): boolean {
+  return ACTIVE_TAXONOMY_IDS.has(id);
+}
 
 export function categoryById(id: string): Category | undefined {
   return TAXONOMY.find((category) => category.id === id);

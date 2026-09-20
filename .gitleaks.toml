@@ -1,0 +1,13 @@
+title = "Conversation Curator secret scanning"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Exact synthetic detector fixtures from the pre-public initial commit"
+regexTarget = "line"
+regexes = [
+  '''^\s*const input = `请勿保存 \$\{syntheticToken\}，密码=synthetic-only，测试卡 4242 4242 4242 4242`;$''', # gitleaks:allow -- exact historical synthetic line
+  '''^\s*const hard = scanSensitiveText\(`-----BEGIN PRIVATE KEY----- \$\{syntheticIdentity\}`\);$''', # gitleaks:allow -- exact historical detector line
+  '''^\s*const candidate = "aZ9\+/bY8_=cX7-dW6eV5fU4gT3hS2iR1jQ0kP";$''', # gitleaks:allow -- exact historical entropy line
+]

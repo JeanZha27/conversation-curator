@@ -1,7 +1,7 @@
 import { createReadStream } from "node:fs";
 import { CuratorError } from "./errors.ts";
 
-const MAX_ITEM_CHARACTERS = 8 * 1024 * 1024;
+export const MAX_ITEM_BYTES = 8 * 1024 * 1024;
 
 export type JsonArrayItem = {
   index: number;
@@ -21,22 +21,44 @@ function parseError(offset: number, detail: string): CuratorError {
   );
 }
 
+function utf8Bytes(character: string): number {
+  const codePoint = character.codePointAt(0)!;
+  if (codePoint <= 0x7f) return 1;
+  if (codePoint <= 0x7ff) return 2;
+  if (codePoint <= 0xffff) return 3;
+  return 4;
+}
+
+async function* decodeUtf8(
+  chunks: AsyncIterable<Buffer | string>,
+): AsyncGenerator<string> {
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  try {
+    for await (const chunk of chunks) {
+      yield typeof chunk === "string" ? chunk : decoder.decode(chunk, { stream: true });
+    }
+    const final = decoder.decode();
+    if (final) yield final;
+  } catch {
+    throw new CuratorError("INVALID_UTF8", "输入文件不是有效的 UTF-8 文本。");
+  }
+}
+
 export async function* streamJsonObjectArray(
   filePath: string,
   signal?: AbortSignal,
 ): AsyncGenerator<JsonArrayItem> {
   if (signal?.aborted) throw abortError();
 
-  const stream = createReadStream(filePath, {
-    encoding: "utf8",
-    highWaterMark: 64 * 1024,
-  });
+  const stream = createReadStream(filePath, { highWaterMark: 64 * 1024 });
   const onAbort = () => stream.destroy(abortError());
   signal?.addEventListener("abort", onAbort, { once: true });
 
   let phase: "before-array" | "expect-value" | "in-value" | "after-value" | "done" =
     "before-array";
-  let raw = "";
+  let rawSegments: string[] = [];
+  let rawCharacters: string[] = [];
+  let rawBytes = 0;
   let depth = 0;
   let inString = false;
   let escaped = false;
@@ -44,8 +66,24 @@ export async function* streamJsonObjectArray(
   let index = 0;
   let afterComma = false;
 
+  function appendRaw(character: string): void {
+    rawCharacters.push(character);
+    if (rawCharacters.length >= 4096) {
+      rawSegments.push(rawCharacters.join(""));
+      rawCharacters = [];
+    }
+  }
+
+  function takeRaw(): string {
+    if (rawCharacters.length > 0) rawSegments.push(rawCharacters.join(""));
+    const value = rawSegments.join("");
+    rawSegments = [];
+    rawCharacters = [];
+    return value;
+  }
+
   try {
-    for await (const chunk of stream) {
+    for await (const chunk of decodeUtf8(stream)) {
       if (signal?.aborted) throw abortError();
 
       for (const character of chunk) {
@@ -71,7 +109,9 @@ export async function* streamJsonObjectArray(
             continue;
           }
           if (character !== "{") throw parseError(offset, "数组元素必须是对象");
-          raw = "{";
+          rawSegments = [];
+          rawCharacters = ["{"];
+          rawBytes = 1;
           depth = 1;
           inString = false;
           escaped = false;
@@ -94,8 +134,9 @@ export async function* streamJsonObjectArray(
           throw parseError(offset, "数组元素之间需要逗号");
         }
 
-        raw += character;
-        if (raw.length > MAX_ITEM_CHARACTERS) {
+        appendRaw(character);
+        rawBytes += utf8Bytes(character);
+        if (rawBytes > MAX_ITEM_BYTES) {
           throw new CuratorError(
             "CONVERSATION_TOO_LARGE",
             `第 ${index + 1} 个对话超过 8 MiB 单项安全上限。`,
@@ -121,10 +162,12 @@ export async function* streamJsonObjectArray(
           depth -= 1;
           if (depth < 0) throw parseError(offset, "括号不匹配");
           if (depth === 0) {
-            yield { index, raw };
+            const completedIndex = index;
+            const completedRaw = takeRaw();
             index += 1;
-            raw = "";
+            rawBytes = 0;
             phase = "after-value";
+            yield { index: completedIndex, raw: completedRaw };
           }
         }
       }

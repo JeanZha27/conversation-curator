@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { constants, createReadStream } from "node:fs";
-import { access, stat } from "node:fs/promises";
-import { basename, extname, resolve } from "node:path";
+import { constants } from "node:fs";
+import { access, open, stat } from "node:fs/promises";
+import { extname, resolve } from "node:path";
 import { parseChatGptConversation } from "../adapters/chatgpt.ts";
 import type {
   ConversationReportItem,
@@ -20,11 +20,11 @@ import {
   outputValueHasSensitiveData,
   safeConversationReference,
   safeSourceHash,
-  sanitizeOutputString,
+  sanitizeClassificationContext,
   sanitizeOutputValue,
 } from "./output-sanitizer.ts";
 import { assertValidClassification } from "./result-validator.ts";
-import { scanSensitiveText } from "./security-scanner.ts";
+import { scanSensitiveSegments } from "./security-scanner.ts";
 
 const MAX_INPUT_BYTES = 256 * 1024 * 1024;
 const MAX_CONVERSATIONS = 50_000;
@@ -34,7 +34,6 @@ const PREVIEW_FAILURES = 10;
 type SourceInfo = {
   path: string;
   sizeBytes: number;
-  modifiedAt: string;
 };
 
 export type RunOptions = {
@@ -71,36 +70,43 @@ async function validateSource(inputPath: string): Promise<SourceInfo> {
   return {
     path,
     sizeBytes: sourceStat.size,
-    modifiedAt: sourceStat.mtime.toISOString(),
   };
 }
 
 async function sha256File(filePath: string, signal?: AbortSignal): Promise<string> {
   if (signal?.aborted) throw abortError();
   const hash = createHash("sha256");
-  const stream = createReadStream(filePath, { highWaterMark: 1024 * 1024 });
-  const onAbort = () => stream.destroy(abortError());
-  signal?.addEventListener("abort", onAbort, { once: true });
+  const handle = await open(filePath, "r");
+  const buffer = Buffer.allocUnsafe(1024 * 1024);
   try {
-    for await (const chunk of stream) {
+    while (true) {
       if (signal?.aborted) throw abortError();
-      hash.update(chunk);
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, null);
+      if (bytesRead === 0) break;
+      hash.update(buffer.subarray(0, bytesRead));
     }
     return hash.digest("hex");
   } finally {
-    signal?.removeEventListener("abort", onAbort);
-    stream.destroy();
+    await handle.close();
   }
 }
 
 function safeFailure(index: number, error: unknown): SafeFailure {
-  const raw =
-    error instanceof CuratorError
-      ? { itemIndex: index, code: error.code, message: error.message }
-      : error instanceof SyntaxError
-        ? { itemIndex: index, code: "INVALID_ITEM_JSON", message: "对话项 JSON 无法解析。" }
-        : { itemIndex: index, code: "ITEM_PROCESSING_FAILED", message: "对话项处理失败。" };
-  return sanitizeOutputValue(raw).value;
+  const safeErrors: Record<string, string> = {
+    INVALID_CONVERSATION: "对话项不是受支持的对象。",
+    MISSING_CONVERSATION_ID: "对话项缺少稳定 ID。",
+    MISSING_MAPPING: "对话项缺少 mapping 对象。",
+    INVALID_BRANCH: "对话分支结构无效。",
+    CLASSIFICATION_INVALID: "分类结果未通过运行时校验。",
+    OUTPUT_SANITIZATION_FAILED: "该项输出未通过隐私校验。",
+  };
+  if (error instanceof SyntaxError) {
+    return { itemIndex: index, code: "INVALID_ITEM_JSON", message: "对话项 JSON 无法解析。" };
+  }
+  if (error instanceof CuratorError && Object.hasOwn(safeErrors, error.code)) {
+    return { itemIndex: index, code: error.code, message: safeErrors[error.code]! };
+  }
+  return { itemIndex: index, code: "ITEM_PROCESSING_FAILED", message: "对话项处理失败。" };
 }
 
 async function emitSafely(
@@ -117,17 +123,17 @@ export async function runCurator(options: RunOptions): Promise<CuratorRunResult>
   const source = await validateSource(options.inputPath);
   const beforeHash = await sha256File(source.path, options.signal);
   const generatedAt = (options.now ?? new Date()).toISOString();
-  const safeFileName = sanitizeOutputString(basename(source.path));
   const header: ReportHeaderEvent = {
     type: "header",
-    schemaVersion: "1.1",
+    schemaVersion: "1.3",
     generatedAt,
     source: {
       platform: "chatgpt",
-      fileName: safeFileName.value,
+      // A source filename is user-controlled metadata and may itself contain
+      // personal data. Keep the report useful without persisting that value.
+      fileName: "conversations.json",
       sha256: safeSourceHash(beforeHash),
       sizeBytes: source.sizeBytes,
-      modifiedAt: source.modifiedAt,
     },
   };
 
@@ -135,11 +141,17 @@ export async function runCurator(options: RunOptions): Promise<CuratorRunResult>
 
   const previewConversations: ConversationReportItem[] = [];
   const previewFailures: SafeFailure[] = [];
-  const seenSourceIds = new Set<string>();
+  // Retain only irreversible references, not raw source IDs, for the duration
+  // of the run.
+  const seenConversationRefs = new Set<string>();
   let totalItems = 0;
   let classified = 0;
   let duplicates = 0;
   let failed = 0;
+  let currentBranchParsed = 0;
+  let branchFallbacks = 0;
+  let contentUnavailable = 0;
+  let classificationTruncated = 0;
   let s3 = 0;
   let s3Candidates = 0;
   let suggestedAccept = 0;
@@ -153,55 +165,101 @@ export async function runCurator(options: RunOptions): Promise<CuratorRunResult>
         "输入超过本轮 50,000 条对话上限；请拆分后重试。",
       );
     }
+    let processed: {
+      data: ConversationReportItem;
+      candidateMatch: boolean;
+      branchMode: ConversationReportItem["branchMode"];
+      contentAvailable: boolean;
+      classificationTruncated: boolean;
+    } | null = null;
     try {
       const parsed = JSON.parse(item.raw) as unknown;
       const conversation = parseChatGptConversation(parsed);
       const conversationRef = safeConversationReference(conversation.sourceConversationId);
-      if (seenSourceIds.has(conversation.sourceConversationId)) {
+      const scan = scanSensitiveSegments([conversation.title, ...conversation.securityText]);
+      if (seenConversationRefs.has(conversationRef)) {
         duplicates += 1;
+        // Duplicates are not classified, but their content still contributes
+        // to the security totals. The CLI marks any duplicate run as partial.
+        if (scan.sensitivityLevel === "S3") s3 += 1;
+        if (scan.candidateMatch) s3Candidates += 1;
         continue;
       }
-      seenSourceIds.add(conversation.sourceConversationId);
+      seenConversationRefs.add(conversationRef);
 
-      const scan = scanSensitiveText([conversation.title, ...conversation.sampledText].join("\n"));
+      const classificationContext = sanitizeClassificationContext(
+        [conversation.classificationTitle, ...conversation.sampledText].join("\n"),
+      );
       const classification = classifyConversation(
         {
           sourceConversationId: conversationRef,
           contentAvailable: conversation.contentAvailable,
+          classificationTruncated: conversation.classificationTruncated,
           branchMode: conversation.branchMode,
         },
-        scan,
+        { ...scan, redactedText: classificationContext },
         options.now ?? new Date(),
       );
-      assertValidClassification(classification, { minimumSensitivity: scan.sensitivityLevel });
+      assertValidClassification(classification, {
+        expectedConversationId: conversationRef,
+        minimumSensitivity: scan.sensitivityLevel,
+        expectedRiskFlags: scan.riskFlags,
+        requiresReview:
+          scan.sensitivityLevel === "S3" ||
+          scan.candidateMatch ||
+          conversation.branchMode === "all-messages-fallback" ||
+          !conversation.contentAvailable ||
+          conversation.classificationTruncated,
+        requiredReasonCodes: [
+          ...scan.riskFlags,
+          ...(conversation.branchMode === "all-messages-fallback" ? ["BRANCH_FALLBACK"] : []),
+          ...(!conversation.contentAvailable ? ["EMPTY_CONTENT"] : []),
+          ...(conversation.classificationTruncated ? ["CONTENT_TRUNCATED"] : []),
+        ],
+      });
       const { redactedText: _discarded, ...safeSecurity } = scan;
       const sanitized = sanitizeOutputValue<ConversationReportItem>({
         conversationRef,
         messageCount: conversation.messageCount,
         branchMode: conversation.branchMode,
+        classificationTruncated: conversation.classificationTruncated,
         security: safeSecurity,
         classification,
       });
       assertOutputValueSafe(sanitized.value);
-
-      classified += 1;
-      if (safeSecurity.sensitivityLevel === "S3") s3 += 1;
-      if (safeSecurity.candidateMatch) s3Candidates += 1;
-      if (classification.requiresReview) requiresReview += 1;
-      else suggestedAccept += 1;
-      if (previewConversations.length < PREVIEW_CONVERSATIONS) {
-        previewConversations.push(sanitized.value);
-      }
-      finalOutputSensitive ||=
-        await emitSafely({ type: "conversation", data: sanitized.value }, options.onEvent);
+      processed = {
+        data: sanitized.value,
+        candidateMatch: safeSecurity.candidateMatch,
+        branchMode: conversation.branchMode,
+        contentAvailable: conversation.contentAvailable,
+        classificationTruncated: conversation.classificationTruncated,
+      };
     } catch (error) {
-      failed += 1;
       const failure = safeFailure(item.index, error);
       const sanitized = sanitizeOutputValue(failure);
       assertOutputValueSafe(sanitized.value);
-      if (previewFailures.length < PREVIEW_FAILURES) previewFailures.push(sanitized.value);
       finalOutputSensitive ||=
         await emitSafely({ type: "failure", data: sanitized.value }, options.onEvent);
+      failed += 1;
+      if (previewFailures.length < PREVIEW_FAILURES) previewFailures.push(sanitized.value);
+      continue;
+    }
+
+    finalOutputSensitive ||=
+      await emitSafely({ type: "conversation", data: processed.data }, options.onEvent);
+    classified += 1;
+    if (processed.data.classification.sensitivityLevel === "S3") s3 += 1;
+    if (processed.candidateMatch) s3Candidates += 1;
+    if (processed.data.classification.requiresReview) requiresReview += 1;
+    else suggestedAccept += 1;
+    if (processed.branchMode === "all-messages-fallback") branchFallbacks += 1;
+    if (!processed.contentAvailable) contentUnavailable += 1;
+    if (processed.classificationTruncated) classificationTruncated += 1;
+    if (processed.branchMode === "current" && processed.contentAvailable) {
+      currentBranchParsed += 1;
+    }
+    if (previewConversations.length < PREVIEW_CONVERSATIONS) {
+      previewConversations.push(processed.data);
     }
   }
 
@@ -218,6 +276,10 @@ export async function runCurator(options: RunOptions): Promise<CuratorRunResult>
     classified,
     duplicates,
     failed,
+    currentBranchParsed,
+    branchFallbacks,
+    contentUnavailable,
+    classificationTruncated,
     s3,
     s3Candidates,
     suggestedAccept,

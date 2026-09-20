@@ -19,10 +19,10 @@ Until a private reporting channel exists, public release remains blocked.
 - Source IDs become one-way local references before output.
 - All output strings receive a final sensitive-data scan.
 - Hard-rule `S3` results cannot be lowered by a classifier.
-- Failed or cancelled output remains in a temporary file that is removed rather than committed.
+- Failed or cancelled output is not committed; temporary-file cleanup failures are surfaced explicitly instead of being reported as success.
 
 ## Known limitations
 
 - Rule-based scanning can miss unknown secret formats and contextual personal data.
-- The current adapter has only synthetic compatibility coverage.
+- The current adapter passed one locally held, de-identified real-export structure; other export variants remain unverified.
 - The local machine, selected output directory, terminal history, and operating-system backups remain outside the application's control.

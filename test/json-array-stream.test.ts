@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { CuratorError } from "../src/core/errors.ts";
-import { streamJsonObjectArray } from "../src/core/json-array-stream.ts";
+import { MAX_ITEM_BYTES, streamJsonObjectArray } from "../src/core/json-array-stream.ts";
 
 async function collect(path: string): Promise<unknown[]> {
   const values: unknown[] = [];
@@ -40,6 +40,37 @@ test("拒绝非数组和尾随逗号", async () => {
         (error: unknown) => error instanceof CuratorError && error.code === "INVALID_JSON_ARRAY",
       );
     }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("拒绝无效 UTF-8 而不是静默替换字符", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "curator-stream-utf8-"));
+  try {
+    const path = join(directory, "invalid.json");
+    await writeFile(path, Buffer.from([0x5b, 0x7b, 0x22, 0x78, 0x22, 0x3a, 0x22, 0xc3, 0x28, 0x22, 0x7d, 0x5d]));
+    await assert.rejects(
+      async () => collect(path),
+      (error: unknown) => error instanceof CuratorError && error.code === "INVALID_UTF8",
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("8 MiB 单项上限按 UTF-8 字节而不是 UTF-16 字符执行", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "curator-stream-byte-limit-"));
+  try {
+    const path = join(directory, "conversations.json");
+    const oversizedChinese = "界".repeat(Math.floor(MAX_ITEM_BYTES / 3) + 1);
+    await writeFile(path, JSON.stringify([{ id: "one", text: oversizedChinese }]));
+
+    await assert.rejects(
+      async () => collect(path),
+      (error: unknown) =>
+        error instanceof CuratorError && error.code === "CONVERSATION_TOO_LARGE",
+    );
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

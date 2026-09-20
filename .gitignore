@@ -1,5 +1,6 @@
 *.tmp
 *.report.json
+/.private-reports/
 coverage/
 dist/
 node_modules/

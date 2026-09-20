@@ -34,6 +34,32 @@ export async function checkCompatibility(inputPath: string): Promise<ReportSumma
       2,
     );
   }
+  if (report.summary.duplicates > 0) {
+    throw new CuratorError(
+      "PRIVATE_SAMPLE_DUPLICATE_IDS",
+      "脱敏私有导出包含重复对话 ID，不能解除兼容测试阻塞。",
+      2,
+    );
+  }
+  if (
+    report.summary.currentBranchParsed === 0 ||
+    report.summary.branchFallbacks > 0 ||
+    report.summary.contentUnavailable > 0 ||
+    report.summary.classificationTruncated > 0
+  ) {
+    throw new CuratorError(
+      "PRIVATE_SAMPLE_STRUCTURE_UNVERIFIED",
+      "脱敏私有导出存在空内容或分支降级，不能解除兼容测试阻塞。",
+      2,
+    );
+  }
+  if (report.summary.s3 > 0 || report.summary.s3Candidates > 0) {
+    throw new CuratorError(
+      "PRIVATE_SAMPLE_NOT_DEIDENTIFIED",
+      "脱敏私有导出仍触发敏感数据规则，不能解除兼容测试阻塞。",
+      2,
+    );
+  }
   if (report.privacy.sensitiveValuesIncluded) {
     throw new CuratorError(
       "PRIVATE_SAMPLE_OUTPUT_UNSAFE",

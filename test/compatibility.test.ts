@@ -51,3 +51,70 @@ test("私有兼容检查只返回汇总计数且不产生报告文件", async ()
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("私有兼容检查拒绝空内容和分支降级", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "curator-private-empty-"));
+  try {
+    const inputPath = join(directory, "conversations.json");
+    await writeFile(inputPath, JSON.stringify([{ id: "synthetic-empty", mapping: {} }]));
+    await assert.rejects(
+      () => checkCompatibility(inputPath),
+      (error: unknown) =>
+        error instanceof CuratorError && error.code === "PRIVATE_SAMPLE_STRUCTURE_UNVERIFIED",
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("私有兼容检查拒绝仍触发敏感规则的样本", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "curator-private-sensitive-"));
+  try {
+    const inputPath = join(directory, "conversations.json");
+    const token = `sk-${"Compatibility9_".repeat(3)}`; // gitleaks:allow -- synthetic token
+    await writeFile(inputPath, JSON.stringify([{
+      id: "synthetic-sensitive",
+      title: "兼容检查",
+      current_node: "message",
+      mapping: {
+        message: {
+          parent: null,
+          message: { create_time: 1, content: { parts: [`合成令牌 ${token}`] } },
+        },
+      },
+    }]));
+    await assert.rejects(
+      () => checkCompatibility(inputPath),
+      (error: unknown) =>
+        error instanceof CuratorError && error.code === "PRIVATE_SAMPLE_NOT_DEIDENTIFIED",
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("私有兼容检查拒绝重复对话 ID", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "curator-private-duplicates-"));
+  try {
+    const inputPath = join(directory, "conversations.json");
+    const item = {
+      id: "synthetic-duplicate",
+      title: "兼容检查",
+      current_node: "message",
+      mapping: {
+        message: {
+          parent: null,
+          message: { create_time: 1, content: { parts: ["合成结构测试"] } },
+        },
+      },
+    };
+    await writeFile(inputPath, JSON.stringify([item, item]));
+    await assert.rejects(
+      () => checkCompatibility(inputPath),
+      (error: unknown) =>
+        error instanceof CuratorError && error.code === "PRIVATE_SAMPLE_DUPLICATE_IDS",
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

@@ -8,8 +8,15 @@ if (!inputPath || !outputPath) {
 }
 
 let peakRssBytes = process.memoryUsage().rss;
+let peakHeapUsedBytes = process.memoryUsage().heapUsed;
+let peakHeapTotalBytes = process.memoryUsage().heapTotal;
+let peakExternalBytes = process.memoryUsage().external;
 const sampler = setInterval(() => {
-  peakRssBytes = Math.max(peakRssBytes, process.memoryUsage().rss);
+  const usage = process.memoryUsage();
+  peakRssBytes = Math.max(peakRssBytes, usage.rss);
+  peakHeapUsedBytes = Math.max(peakHeapUsedBytes, usage.heapUsed);
+  peakHeapTotalBytes = Math.max(peakHeapTotalBytes, usage.heapTotal);
+  peakExternalBytes = Math.max(peakExternalBytes, usage.external);
 }, 5);
 sampler.unref();
 
@@ -18,7 +25,17 @@ try {
   const result = await runCurator({ inputPath, onEvent: sink.write });
   await sink.commit();
   peakRssBytes = Math.max(peakRssBytes, process.memoryUsage().rss);
-  process.stdout.write(`${JSON.stringify({ peakRssBytes, summary: result.summary })}\n`);
+  // resourceUsage tracks the OS high-water mark and catches synchronous
+  // allocation spikes that an event-loop timer can miss.
+  peakRssBytes = Math.max(peakRssBytes, process.resourceUsage().maxRSS * 1024);
+  process.stdout.write(`${JSON.stringify({
+    peakRssBytes,
+    peakHeapUsedBytes,
+    peakHeapTotalBytes,
+    peakExternalBytes,
+    summary: result.summary,
+    failureCodes: result.previewFailures.map((failure) => failure.code),
+  })}\n`);
 } catch (error) {
   await sink.abort();
   throw error;

@@ -12,9 +12,12 @@
     "dist",
     "docs",
     "README.md",
+    "SKILL.md",
+    "CHANGELOG.md",
     "LICENSE",
     "PRIVACY.md",
-    "SECURITY.md"
+    "SECURITY.md",
+    "CONTRIBUTING.md"
   ],
   "engines": {
     "node": ">=24"
@@ -24,9 +27,12 @@
     "test": "node --test test/*.test.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json",
-    "check": "pnpm typecheck && pnpm test && pnpm build",
+    "check": "pnpm policy:repository && pnpm typecheck && pnpm test && pnpm build",
+    "policy:repository": "node scripts/repository-policy-check.ts",
     "benchmark:memory": "node scripts/memory-benchmark.ts",
-    "compatibility:private": "node scripts/compatibility-check.ts",
+    "benchmark:input-limit": "node scripts/memory-benchmark.ts --items 4000 --payload-bytes 65000 --max-rss-mib 256",
+    "benchmark:large-items": "node scripts/memory-benchmark.ts --items 30 --payload-bytes 7500000 --max-rss-mib 256",
+    "compatibility:private": "node --max-old-space-size=96 --max-semi-space-size=2 scripts/compatibility-check.ts",
     "pack:check": "pnpm pack --dry-run --json",
     "package:smoke": "node scripts/package-smoke.ts",
     "prepack": "node node_modules/typescript/bin/tsc -p tsconfig.build.json"

@@ -15,12 +15,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out complete history
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
       - name: Scan commits for secrets
-        uses: gitleaks/gitleaks-action@v3.0.0
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_ENABLE_COMMENTS: false
@@ -30,11 +30,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Set up Node.js
-        uses: actions/setup-node@v7.0.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24.19.0
           package-manager-cache: false
@@ -42,6 +42,8 @@ jobs:
         run: corepack enable && corepack install
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile
+      - name: Reject private and generated artifacts
+        run: pnpm policy:repository
       - name: Type-check
         run: pnpm typecheck
       - name: Test
@@ -49,7 +51,11 @@ jobs:
       - name: Build
         run: pnpm build
       - name: Memory smoke benchmark
-        run: pnpm benchmark:memory -- --items 10000 --max-rss-mib 256
+        run: pnpm benchmark:memory -- --items 50000 --max-rss-mib 256
+      - name: Near-limit input benchmark
+        run: pnpm benchmark:input-limit
+      - name: Large-item memory benchmark
+        run: pnpm benchmark:large-items
       - name: Package dry run
         run: pnpm pack:check
       - name: Installed package smoke test

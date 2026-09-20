@@ -20,25 +20,70 @@ function normalizeTimestamp(value: unknown): string | null {
   return null;
 }
 
-function messageText(node: unknown): { text: string; createdAt: number } | null {
+type CanonicalMessage = {
+  classificationText: string;
+  securityText: string;
+  createdAt: number;
+};
+
+const ATTACHMENT_METADATA_KEYS = new Set([
+  "filename",
+  "file_name",
+  "fileName",
+  "name",
+  "content_type",
+  "contentType",
+  "mime_type",
+  "mimeType",
+]);
+const MAX_CLASSIFICATION_MESSAGE_CHARACTERS = 32 * 1024;
+
+function attachmentMetadata(value: unknown): string[] {
+  if (!isRecord(value)) return [];
+
+  return Object.entries(value).flatMap(([key, entry]) => {
+    if (ATTACHMENT_METADATA_KEYS.has(key) && typeof entry === "string" && entry.trim()) {
+      return [`attachment.${key}:${entry.trim()}`];
+    }
+    return [];
+  });
+}
+
+function messageContent(node: unknown): CanonicalMessage | null {
   if (!isRecord(node) || !isRecord(node.message)) return null;
   const message = node.message;
-  if (!isRecord(message.content) || !Array.isArray(message.content.parts)) return null;
-  const text = message.content.parts
-    .filter((part): part is string => typeof part === "string")
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .join("\n")
-    .trim();
-  if (!text) return null;
+  const parts = isRecord(message.content) && Array.isArray(message.content.parts)
+    ? message.content.parts
+    : [];
+  const textParts = parts.filter((part): part is string => typeof part === "string");
+  const visibleText = textParts.map((part) => part.trim()).filter(Boolean).join("\n").trim();
+  const role = isRecord(message.author) && typeof message.author.role === "string"
+    ? message.author.role
+    : null;
+  const hidden = isRecord(message.metadata) &&
+    (message.metadata.is_visually_hidden_from_conversation === true || message.metadata.hidden === true);
+  const classificationAllowed = !hidden && (role === null || role === "user" || role === "assistant");
+  const classificationText = classificationAllowed ? visibleText : "";
+  const metadata = [
+    ...parts.flatMap((part) => isRecord(part) ? attachmentMetadata(part) : []),
+    ...(isRecord(message.metadata) && Array.isArray(message.metadata.attachments)
+      ? message.metadata.attachments.flatMap(attachmentMetadata)
+      : []),
+  ];
+  // Scan the concatenated text parts as one logical message. Exporters may
+  // split a credential at an arbitrary part boundary, where newline joining
+  // would otherwise let it evade a deterministic detector.
+  const securityBody = textParts.join("").trim();
+  const securityText = [securityBody, ...metadata].filter(Boolean).join("\n");
+  if (!securityText) return null;
   const createdAt = typeof message.create_time === "number" ? message.create_time : 0;
-  return { text, createdAt };
+  return { classificationText, securityText, createdAt };
 }
 
 function currentBranchMessages(
   mapping: JsonRecord,
   currentNode: string,
-): string[] | null {
+): CanonicalMessage[] | null {
   const nodes: unknown[] = [];
   const visited = new Set<string>();
   let nodeId: string | null = currentNode;
@@ -48,29 +93,55 @@ function currentBranchMessages(
       throw new CuratorError("INVALID_BRANCH", "对话分支包含循环引用。");
     }
     visited.add(nodeId);
+    if (!Object.hasOwn(mapping, nodeId)) return null;
     const current: unknown = mapping[nodeId];
     if (!isRecord(current)) return null;
     nodes.push(current);
-    nodeId = typeof current.parent === "string" && current.parent ? current.parent : null;
+    if (current.parent === null || current.parent === undefined || current.parent === "") {
+      nodeId = null;
+    } else if (typeof current.parent === "string") {
+      nodeId = current.parent;
+    } else {
+      throw new CuratorError("INVALID_BRANCH", "对话分支父节点引用无效。");
+    }
   }
 
   return nodes.reverse().flatMap((node) => {
-    const message = messageText(node);
-    return message ? [message.text] : [];
+    const message = messageContent(node);
+    return message ? [message] : [];
   });
 }
 
-function allMessages(mapping: JsonRecord): string[] {
+function allMessages(mapping: JsonRecord): CanonicalMessage[] {
   return Object.values(mapping)
-    .map(messageText)
-    .filter((message): message is { text: string; createdAt: number } => message !== null)
-    .sort((left, right) => left.createdAt - right.createdAt)
-    .map((message) => message.text);
+    .map(messageContent)
+    .filter((message): message is CanonicalMessage => message !== null)
+    .sort((left, right) => left.createdAt - right.createdAt);
 }
 
-function sampleMessages(messages: string[]): string[] {
-  if (messages.length <= 6) return messages;
-  return [...messages.slice(0, 3), ...messages.slice(-3)];
+function truncateClassificationText(text: string): { text: string; truncated: boolean } {
+  if (text.length <= MAX_CLASSIFICATION_MESSAGE_CHARACTERS) {
+    return { text, truncated: false };
+  }
+  const side = Math.floor(MAX_CLASSIFICATION_MESSAGE_CHARACTERS / 2);
+  return {
+    text: `${text.slice(0, side)}\n[CONTENT_TRUNCATED]\n${text.slice(-side)}`,
+    truncated: true,
+  };
+}
+
+function sampleMessages(messages: CanonicalMessage[]): { texts: string[]; truncated: boolean } {
+  const validText = messages.map((message) => message.classificationText).filter(Boolean);
+  const selected = validText.length <= 6
+    ? validText
+    : [...validText.slice(0, 3), ...validText.slice(-3)];
+  let truncated = false;
+  const texts = selected.map((text) => {
+    const bounded = truncateClassificationText(text);
+    truncated ||= bounded.truncated;
+    return bounded.text;
+  });
+  return { texts, truncated };
 }
 
 export function parseChatGptConversation(value: unknown): CanonicalConversation {
@@ -92,23 +163,29 @@ export function parseChatGptConversation(value: unknown): CanonicalConversation 
   }
 
   let branchMode: CanonicalConversation["branchMode"] = "all-messages-fallback";
-  let messages: string[] | null = null;
+  let messages: CanonicalMessage[] | null = null;
   if (typeof value.current_node === "string" && value.current_node) {
     messages = currentBranchMessages(value.mapping, value.current_node);
     if (messages) branchMode = "current";
   }
   if (!messages) messages = allMessages(value.mapping);
 
-  const title = typeof value.title === "string" && value.title.trim() ? value.title.trim() : "未命名对话";
+  const trimmedTitle = typeof value.title === "string" ? value.title.trim() : "";
+  const title = trimmedTitle || "未命名对话";
+  const boundedTitle = truncateClassificationText(title);
+  const sampled = sampleMessages(messages);
 
   return {
     sourceConversationId,
     title,
+    classificationTitle: boundedTitle.text,
     createdAt: normalizeTimestamp(value.create_time),
     updatedAt: normalizeTimestamp(value.update_time),
     messageCount: messages.length,
-    contentAvailable: messages.length > 0,
-    sampledText: sampleMessages(messages),
+    contentAvailable: messages.some((message) => Boolean(message.classificationText)),
+    classificationTruncated: boundedTitle.truncated || sampled.truncated,
+    securityText: messages.map((message) => message.securityText),
+    sampledText: sampled.texts,
     branchMode,
   };
 }

@@ -5,10 +5,13 @@ export type SensitivityLevel = "S0" | "S1" | "S2" | "S3";
 export type CanonicalConversation = {
   sourceConversationId: string;
   title: string;
+  classificationTitle: string;
   createdAt: string | null;
   updatedAt: string | null;
   messageCount: number;
   contentAvailable: boolean;
+  classificationTruncated: boolean;
+  securityText: string[];
   sampledText: string[];
   branchMode: "current" | "all-messages-fallback";
 };
@@ -53,6 +56,7 @@ export type ConversationReportItem = {
   conversationRef: string;
   messageCount: number;
   branchMode: CanonicalConversation["branchMode"];
+  classificationTruncated: boolean;
   security: Omit<SecurityScan, "redactedText">;
   classification: ClassificationResult;
 };
@@ -62,7 +66,6 @@ export type ReportSource = {
   fileName: string;
   sha256: string;
   sizeBytes: number;
-  modifiedAt: string;
 };
 
 export type ReportPrivacy = {
@@ -77,6 +80,10 @@ export type ReportSummary = {
   classified: number;
   duplicates: number;
   failed: number;
+  currentBranchParsed: number;
+  branchFallbacks: number;
+  contentUnavailable: number;
+  classificationTruncated: number;
   s3: number;
   s3Candidates: number;
   suggestedAccept: number;
@@ -85,7 +92,7 @@ export type ReportSummary = {
 
 export type ReportHeaderEvent = {
   type: "header";
-  schemaVersion: "1.1";
+  schemaVersion: "1.3";
   generatedAt: string;
   source: ReportSource;
 };
