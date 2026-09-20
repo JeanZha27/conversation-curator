@@ -40,9 +40,8 @@ commit, release, issue, workflow artifact, or log.
 - Have a non-author reviewer follow README installation and usage in a clean environment, including
   invalid input, repeat execution, and report write failure. Record tested operating systems.
 
-The workflow checks out full history for Gitleaks and disables PR comments and SARIF artifact uploads
-to keep findings out of public surfaces. Repositories owned by a GitHub organization may require a
-`GITLEAKS_LICENSE` secret; configure it without printing its value.
+The workflow checks out full history and runs a checksum-verified, pinned Gitleaks CLI directly.
+It does not comment on pull requests or upload findings artifacts.
 
 ## Release materials
 
@@ -232,3 +231,18 @@ is a completed scanner run, **not** proof that every possible secret format is c
 GitHub-hosted CI, branch protection, private vulnerability reporting, and a complete final-version
 non-author review remain unverified. No commit, push, publication, or Git history rewrite was
 performed.
+
+## First private GitHub CI run — 2026-09-21
+
+The private repository's first push at `4e1928b` passed `verify`, but `Git history secret scan`
+failed before scanning: `gitleaks-action` v3 constructed an invalid initial-push revision range,
+and its log reported approximately zero bytes scanned. Exit code 1 therefore indicates a scan
+execution error here, not a secret finding or a successful clearance. The Ubuntu runner migration
+notices were unrelated.
+
+The workflow now downloads official Gitleaks v8.30.0 for Linux x64, checks the published SHA-256,
+and runs `gitleaks git --log-opts=--all` with the reviewed config, inline allowances disabled, and
+redaction enabled. This avoids action-generated push ranges and produces no PR comments or SARIF
+artifacts. The revised hosted job has **not yet run**. Public release remains blocked until both
+hosted jobs pass, branch protection and private vulnerability reporting are confirmed, and the
+final version is reviewed. No secret value was present in the supplied failure screenshot.

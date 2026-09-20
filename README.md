@@ -23,7 +23,7 @@ ChatGPT 导出文件（只读）
 ## 环境
 
 本轮使用 Node.js 24.19.0 验证。CLI 运行时不依赖第三方包；贡献者需要安装锁定的 TypeScript 开发依赖以执行静态检查。
-本地 CLI 在 macOS 上验证；Linux 的 GitHub CI 已配置但尚未在托管环境运行，Windows 尚未验证。
+本地 CLI 在 macOS 上验证；Linux 的 GitHub CI `verify` 任务已通过，历史密钥扫描任务修复后仍待托管复测；Windows 尚未验证。
 
 ## 使用
 

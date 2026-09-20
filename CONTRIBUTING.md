@@ -51,5 +51,5 @@ Review every effective allowlist change before updating that digest; never regen
 When a marked fixture changes, verify the full new line contains only synthetic material before
 updating its path-and-line SHA-256 digest in `scripts/approved-synthetic-markers.ts`. Do not
 regenerate or approve all markers automatically; the digest change is a security review point.
-Organization-owned repositories may need a private
-`GITLEAKS_LICENSE` repository secret for the Action to run.
+The CI job downloads a pinned Gitleaks release and verifies its SHA-256 before scanning all Git
+history. It neither comments on pull requests nor uploads a findings artifact.
