@@ -246,3 +246,12 @@ redaction enabled. This avoids action-generated push ranges and produces no PR c
 artifacts. The revised hosted job has **not yet run**. Public release remains blocked until both
 hosted jobs pass, branch protection and private vulnerability reporting are confirmed, and the
 final version is reviewed. No secret value was present in the supplied failure screenshot.
+
+The post-fix local full-history scan then found one test-only encrypted-private-key header in
+`test/core.test.ts` from commit `4e1928b`; the line contains no key body or usable credential.
+Because committed history must not be rewritten, `.gitleaksignore` excludes only this finding's
+exact commit/file/rule/line fingerprint. The repository policy pins the entire ignore file and
+rejects additions or edits. No path-wide, rule-wide, or generic key-format exception was added.
+Gitleaks v8.30.0 then scanned all three local commits and the tracked-file snapshot separately:
+both reported zero findings. Type-check, 54 tests, build, and repository policy passed. The
+hosted CI rerun is still required; no public-release clearance is implied.

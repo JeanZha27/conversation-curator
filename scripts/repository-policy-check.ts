@@ -5,6 +5,7 @@ import { lstat, readFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { approvedMarkerCount, isApprovedSyntheticMarker, markerDigest } from "./approved-synthetic-markers.ts";
 import { isApprovedGitleaksConfig } from "./approved-gitleaks-config.ts";
+import { isApprovedGitleaksIgnore } from "./approved-gitleaks-ignore.ts";
 import { scanSensitiveText } from "../src/core/security-scanner.ts";
 
 const execFileAsync = promisify(execFile);
@@ -122,6 +123,13 @@ if (regularTracked.includes(".gitleaks.toml")) {
   ) {
     violations += 1;
   }
+}
+
+if (
+  !regularTracked.includes(".gitleaksignore") ||
+  !isApprovedGitleaksIgnore(await readFile(".gitleaksignore", "utf8"))
+) {
+  violations += 1;
 }
 
 if (violations > 0) {

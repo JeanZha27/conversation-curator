@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { approvedMarkerCount, isApprovedSyntheticMarker } from "../scripts/approved-synthetic-markers.ts";
 import { isApprovedGitleaksConfig } from "../scripts/approved-gitleaks-config.ts";
+import { isApprovedGitleaksIgnore } from "../scripts/approved-gitleaks-ignore.ts";
 import { scanSensitiveText } from "../src/core/security-scanner.ts";
 
 test("仓库豁免只允许已审查的精确合成行", async () => {
@@ -27,4 +28,11 @@ test("Gitleaks 配置只接受已审查版本，拒绝新增全匹配豁免", as
   const widened = config.replace("regexes = [\n", "regexes = [\n  '''^.*$''',\n");
   assert.notEqual(widened, config);
   assert.equal(isApprovedGitleaksConfig(widened), false);
+});
+
+test("Gitleaks 历史豁免只接受一条已审查指纹", async () => {
+  const ignore = await readFile(new URL("../.gitleaksignore", import.meta.url), "utf8");
+  assert.equal(isApprovedGitleaksIgnore(ignore), true);
+  assert.equal(isApprovedGitleaksIgnore(`${ignore}another:fingerprint\n`), false);
+  assert.equal(isApprovedGitleaksIgnore(ignore.replace("private-key:121", "private-key:122")), false);
 });
