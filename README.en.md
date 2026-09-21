@@ -6,7 +6,7 @@ Conversation Curator is a privacy-first local CLI and Codex Skill for reviewing 
 
 It does not connect to ChatGPT, call a remote model, send telemetry, or modify conversations on the source platform.
 
-## Understand it in 30 seconds
+## Overview
 
 Think of it as a **ChatGPT conversation organizer that runs only on your computer**. Give it the `conversations.json` file from an official ChatGPT data export. It groups conversations by topic and status, flags items that may contain sensitive data or need a human decision, and shows you a summary first.
 
