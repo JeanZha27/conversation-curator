@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added an English README, beginner-friendly usage introductions, and complete repository/package discovery metadata.
+- Reduced release documentation to current gates and evidence, and stopped treating compact Chinese choice lists as local paths.
 - Preserve cancellation errors during streamed UTF-8 decoding and add read-time cancellation coverage.
 - Keep redaction markers out of classification and tighten URI and non-ASCII local-path handling.
 - Simplify the successful-report privacy invariant and centralize classification confidence policy.
