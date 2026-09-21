@@ -254,4 +254,13 @@ exact commit/file/rule/line fingerprint. The repository policy pins the entire i
 rejects additions or edits. No path-wide, rule-wide, or generic key-format exception was added.
 Gitleaks v8.30.0 then scanned all three local commits and the tracked-file snapshot separately:
 both reported zero findings. Type-check, 54 tests, build, and repository policy passed. The
-hosted CI rerun is still required; no public-release clearance is implied.
+hosted rerun for commit `54b4115` completed successfully in GitHub Actions run `35535229043`.
+The green overall result confirms both jobs in the fixed two-job workflow passed; the red run for
+`4e1928b` is the superseded first run described above.
+
+The original non-author AI reviewer then performed an incremental review limited to commits
+`4d30cd6` and `54b4115`. It found no new P0, P1, or P2 issue in the checksum-pinned Gitleaks
+installation, full-history invocation, exact fingerprint exception, policy guard, regression
+test, or release record. This was not a repeat review of the previously accepted classifier and
+privacy implementation. Public release remains blocked until branch protection and private
+vulnerability reporting are confirmed; this evidence does not make the private repository public.
