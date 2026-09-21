@@ -11,9 +11,6 @@ const APPROVED_MARKER_DIGESTS: Readonly<Record<string, readonly string[]>> = {
   "CONTRIBUTING.md": [
     "2f8fce767457108abc6c8338aea3dfbc4c7b7ef13f64f3c8ac9118cfcd8db0a2",
   ],
-  "docs/release-checklist.md": [
-    "d7dc2df1f3053e47b4473318432d2ebbb930413b04c170ccf97505ddee27403e",
-  ],
   "src/core/security-scanner.ts": [
     "83d3c2c43ad2e563193707b149fe775e2a3d99106df200751e778861f5238e2e",
   ],

@@ -29,6 +29,13 @@ function isAsciiSchemeFragment(match: string, offset: number, input: string): bo
   return /^[A-Z][A-Z0-9+.-]*$/iu.test(`${prefix}${driveLetter}`);
 }
 
+function isCompactCjkChoiceList(match: string, offset: number, input: string): boolean {
+  const leading = input.slice(0, offset).match(/\p{Script=Han}+$/u)?.[0] ?? "";
+  if ([...leading].length !== 1) return false;
+  const options = match.slice(1).split("/");
+  return options.length >= 2 && options.every((option) => /^\p{Script=Han}{1,2}$/u.test(option));
+}
+
 function isPosixAbsolutePath(match: string, offset: number, input: string): boolean {
   if (isAllowedNetworkUrlPath(offset, input)) return false;
   const previous = input[offset - 1] ?? "";
@@ -36,7 +43,7 @@ function isPosixAbsolutePath(match: string, offset: number, input: string): bool
   // The regex boundary already excludes ASCII relative paths such as
   // project/home/page. For CJK-adjacent text, keep ordinary one-segment
   // phrases such as 和/或 while protecting known roots and multi-level paths.
-  if (/[A-Z0-9]/iu.test(previous)) return false;
+  if (isCompactCjkChoiceList(match, offset, input)) return false;
   return (
     /^\/(?:Applications|Library|System|Users|Volumes|bin|dev|etc|home|opt|private|root|run|sbin|srv|tmp|usr|var)(?:\/|$)/u.test(match) ||
     match.indexOf("/", 1) >= 0
