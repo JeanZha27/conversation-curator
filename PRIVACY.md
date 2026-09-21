@@ -2,16 +2,22 @@
 
 Conversation Curator is designed to process ChatGPT exports locally. The current CLI does not include network or telemetry code and does not modify the source platform.
 
-When used through the Codex Skill, the `--summary-only` CLI result contains aggregate counts. These counts become part of the Codex conversation. The Skill does not open the original export or detailed report into the model conversation.
+When used through the Codex Skill, the Skill prints a command for the user to run in their own terminal. If the user pastes back the `--summary-only` result, only aggregate counts become part of the Codex conversation. The Skill does not ask for the real export path and does not open the original export or detailed report into the model conversation.
+
+## Threat model
+
+The CLI is designed to reduce accidental disclosure through its own cooperative workflow: it does not place message content in terminal summaries or reports, upload data, or modify the source platform. It does not sandbox the source file from an agent or process that already has local filesystem permission. For that threat, run the CLI yourself and share only aggregate output; eliminating the capability requires OS-level permission separation or an isolated environment.
 
 ## Data read
 
 - The user-selected `conversations.json` file is opened read-only.
+- Before hashing or processing the complete file, the CLI checks that the first non-empty array element has a stable ChatGPT conversation ID and a `mapping` object.
 - Deterministic sensitive-data scanning covers the title, every textual message on the selected branch, and an allowlist of attachment metadata fields such as filename and content type.
 - Classification uses only the title plus at most the first three and last three textual messages on that branch, after both sensitive-pattern and output-privacy redaction (including email, phone number, and local path rules).
 - A title or sampled message longer than 32 Ki characters is reduced to bounded leading and trailing context for classification and is always marked for review; deterministic scanning still inspects the complete text.
 - Attachment bodies, binary data, images, audio, and non-allowlisted attachment fields are not added to scanning or classification text.
 - When the current branch cannot be resolved, the adapter marks the all-message fallback for mandatory review.
+- Direct CLI execution uses a local child process with fixed V8 heap bounds (`--max-old-space-size=96` and `--max-semi-space-size=2`).
 
 ## Data written
 

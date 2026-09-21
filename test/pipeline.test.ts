@@ -100,6 +100,46 @@ test("输入路径、文件类型、空文件和 256 MiB 上限在读取前拒�
   }
 });
 
+test("非数组或不含 ChatGPT 会话结构的 JSON 在完整处理前拒绝", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "curator-input-shape-"));
+  try {
+    const nonArray = join(directory, "object.json");
+    const unrelatedArray = join(directory, "unrelated.json");
+    const missingStableId = join(directory, "missing-id.json");
+    await writeFile(nonArray, JSON.stringify({ id: "not-an-array", mapping: {} }));
+    await writeFile(unrelatedArray, JSON.stringify([{ name: "unrelated data" }]));
+    await writeFile(missingStableId, JSON.stringify([{ title: "missing id", mapping: {} }]));
+
+    for (const path of [nonArray, unrelatedArray, missingStableId]) {
+      await assert.rejects(
+        () => runCurator({ inputPath: path }),
+        (error: unknown) =>
+          error instanceof CuratorError && error.code === "INPUT_NOT_CHATGPT_EXPORT",
+      );
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("输入结构预检保留 conversation_id 兼容格式", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "curator-conversation-id-"));
+  try {
+    const inputPath = join(directory, "conversations.json");
+    await writeFile(
+      inputPath,
+      JSON.stringify([{ conversation_id: "legacy-compatible-id", mapping: {} }]),
+    );
+
+    const { result } = await collectRun(inputPath);
+    assert.equal(result.summary.totalItems, 1);
+    assert.equal(result.summary.classified, 1);
+    assert.equal(result.summary.failed, 0);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("输入到流式安全报告的完整链路保持源文件不变", async () => {
   const directory = await mkdtemp(join(tmpdir(), "curator-pipeline-"));
   try {
@@ -722,7 +762,7 @@ test("CLI 在空格、中文、Unicode 符号和符号链接路径下均执行",
   }
 });
 
-test("CLI 拒绝非数组输入并清理未提交的流式报告", async () => {
+test("CLI 将非数组输入识别为非 ChatGPT 导出并清理未提交报告", async () => {
   const directory = await mkdtemp(join(tmpdir(), "curator-cli-invalid-"));
   try {
     const inputPath = join(directory, "conversations.json");
@@ -738,7 +778,7 @@ test("CLI 拒绝非数组输入并清理未提交的流式报告", async () => {
         ),
       (error: unknown) => {
         const value = error as { stderr?: string; code?: number };
-        return value.code === 1 && Boolean(value.stderr?.includes("INVALID_JSON_ARRAY"));
+        return value.code === 1 && Boolean(value.stderr?.includes("INPUT_NOT_CHATGPT_EXPORT"));
       },
     );
     await assert.rejects(() => readFile(outputPath));

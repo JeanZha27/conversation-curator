@@ -15,13 +15,13 @@ By default, it writes nothing. It does not sign in to your ChatGPT account, uplo
 The simplest way to use it:
 
 1. Export your ChatGPT data, unzip it, and locate `conversations.json`.
-2. In Codex, enter:
+2. In Codex, ask only for the local command and do not provide the real path:
 
    ```text
-   $conversation-curator organize this file: /path/to/conversations.json
+   $conversation-curator show me the safe local command; do not read the file.
    ```
 
-3. Review the aggregate counts. If you want item-level suggestions, explicitly ask for a detailed report and choose a local save path.
+3. Replace `<path>` and run the command in your own terminal. Paste back only the aggregate counts. If you need item-level suggestions, choose and inspect the report path locally.
 
 Use it to understand the shape of a large chat history, find items that need manual review, and check for obvious sensitive-data risks before organizing. It is not a cloud-sync tool and cannot directly manage conversations on ChatGPT.
 
@@ -39,9 +39,9 @@ ChatGPT export (read-only)
 
 ## Use it as a Codex Skill
 
-The root [SKILL.md](SKILL.md) is the Skill entry point. With Node.js 24 installed, place the complete repository in your Codex user Skill directory, for example `~/.agents/skills/conversation-curator/` on macOS or Linux. Keep `SKILL.md` and `src/cli.ts` together. Restart Codex if the Skill does not appear, then invoke `$conversation-curator` and provide the path to your exported `conversations.json` file.
+The root [SKILL.md](SKILL.md) is the Skill entry point. With Node.js 24 installed, place the complete repository in your Codex user Skill directory, for example `~/.agents/skills/conversation-curator/` on macOS or Linux. Keep `SKILL.md` and `src/cli.ts` together. Restart Codex if the Skill does not appear.
 
-The Skill sends only aggregate `--summary-only` counts into the current Codex conversation. Detailed suggestions stay in a local report that you explicitly choose to create and inspect. The Skill cannot rename, move, archive, or delete conversations on ChatGPT.
+To avoid giving an agent the export path and read access, the Skill prints a command with a literal `<path>` placeholder instead of running the CLI. Replace the path and run it in your own terminal, then paste back only the aggregate `--summary-only` counts if you want help interpreting them. Keep detailed reports local. The Skill cannot rename, move, archive, or delete conversations on ChatGPT.
 
 ## Requirements
 
@@ -58,7 +58,7 @@ Preview without writing a file:
 node src/cli.ts --input /path/to/conversations.json
 ```
 
-Show aggregate counts only, which is the mode used by the Codex Skill:
+Show aggregate counts only, which are suitable for pasting back to Codex:
 
 ```bash
 node src/cli.ts --input /path/to/conversations.json --summary-only
@@ -83,17 +83,21 @@ header -> conversation / failure (one per item) -> summary
 
 The current `schemaVersion` is `1.3`. Consumers should parse by version and accept additional summary fields within the same major version.
 
+The input must be a `.json` top-level object array whose first non-empty element contains a stable ChatGPT conversation ID and `mapping`. Otherwise the CLI returns `INPUT_NOT_CHATGPT_EXPORT` before hashing or processing the complete file. Exit 0 means success; exit 2 means an empty or partial result; validation and runtime errors return 1; cancellation returns 130.
+
 ## Privacy model
 
 - The selected export is opened read-only.
 - Sensitive-data scanning covers the title, all text on the selected conversation branch, and allowlisted attachment metadata.
 - Classification receives only the title and a redacted sample of the first three and last three textual messages.
+- Direct CLI execution starts a local child process with fixed V8 heap bounds (`--max-old-space-size=96` and `--max-semi-space-size=2`).
 - Attachment bodies, binary data, images, and audio are excluded.
 - Source conversation IDs become one-way local references.
 - Reports contain statistics, classifications, hashes, and safe failure fields, but no message bodies, original titles, source IDs, or matched sensitive values.
 - Every outgoing string is scanned again before the report is committed atomically.
 - If the final output scan detects sensitive data, the run fails and does not commit the report.
 - There is no database, cloud backup, telemetry, or cross-device synchronization.
+- Threat model: the CLI reduces accidental disclosure through cooperative use, such as writing raw content to a report, repository, or remote model. It does not isolate the export from an agent or process that already has local filesystem access. The default boundary is human-run relay: run the CLI yourself and share only aggregate output. Stronger protection requires OS-level permission separation or an isolated environment.
 
 Rule-based scanning cannot guarantee that every sensitive value will be detected. Treat generated reports as private data and review them before sharing.
 
@@ -103,6 +107,12 @@ Rule-based scanning cannot guarantee that every sensitive value will be detected
 - Maximum conversations: 50,000
 - Maximum size of one conversation object: 8 MiB
 - Classification context per long text: bounded leading and trailing segments from a 32 KiB budget
+
+Recent local synthetic benchmarks:
+
+- 50,000 items: 15,316,673-byte input, 50,950,654-byte output, 128.1 MiB peak RSS
+- Near-limit input: 4,000 items, 261,212,673-byte input (about 249.1 MiB), 4,148,654-byte output, 122.7 MiB peak RSS
+- Large items: 30 items, 225,008,913-byte input (about 7.15 MiB message bodies), 31,754-byte output, 172.6 MiB peak RSS
 
 Synthetic benchmarks for the supported input shapes stayed below the project's 256 MiB RSS threshold. These measurements do not guarantee the same memory profile for every real export.
 

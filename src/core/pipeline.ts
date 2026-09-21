@@ -35,6 +35,48 @@ type SourceInfo = {
   sizeBytes: number;
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function inputNotChatGptExport(): CuratorError {
+  return new CuratorError(
+    "INPUT_NOT_CHATGPT_EXPORT",
+    "输入文件不是受支持的 ChatGPT conversations.json 导出。",
+  );
+}
+
+function looksLikeChatGptConversation(value: unknown): boolean {
+  if (!isRecord(value) || !isRecord(value.mapping)) return false;
+  const id = typeof value.id === "string" ? value.id : value.conversation_id;
+  return typeof id === "string" && id.trim().length > 0;
+}
+
+async function validateChatGptExportShape(
+  filePath: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const iterator = streamJsonObjectArray(filePath, signal)[Symbol.asyncIterator]();
+  try {
+    const first = await iterator.next();
+    if (first.done) return;
+    if (!looksLikeChatGptConversation(JSON.parse(first.value.raw) as unknown)) {
+      throw inputNotChatGptExport();
+    }
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") throw error;
+    if (
+      error instanceof CuratorError &&
+      (error.code === "INVALID_UTF8" || error.code === "CONVERSATION_TOO_LARGE")
+    ) {
+      throw error;
+    }
+    throw inputNotChatGptExport();
+  } finally {
+    await iterator.return?.(undefined);
+  }
+}
+
 export type RunOptions = {
   inputPath: string;
   signal?: AbortSignal | undefined;
@@ -118,6 +160,9 @@ async function emitSafely(
 
 export async function runCurator(options: RunOptions): Promise<CuratorRunResult> {
   const source = await validateSource(options.inputPath);
+  // Reject an unrelated JSON file after inspecting at most its first array
+  // element, before hashing or processing the complete file.
+  await validateChatGptExportShape(source.path, options.signal);
   const beforeHash = await sha256File(source.path, options.signal);
   const generatedAt = (options.now ?? new Date()).toISOString();
   const header: ReportHeaderEvent = {

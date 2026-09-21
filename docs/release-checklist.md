@@ -7,7 +7,8 @@ blocked, or failing stops the release.
 
 - Validate `SKILL.md` frontmatter and confirm its scope matches the README and CLI.
 - Test one matching Skill request and one unrelated request in a clean Codex installation.
-- Confirm Skill runs use `--summary-only` and expose aggregate counts only.
+- Confirm the Skill gives the user a placeholder-based `--summary-only` command instead of running it, and asks for aggregate output only.
+- Confirm README, Privacy, and Skill text state that local filesystem access is outside the CLI's isolation boundary.
 - `pnpm install --frozen-lockfile`
 - `pnpm policy:repository`
 - `pnpm typecheck`

@@ -136,7 +136,7 @@ try {
   await expectInstalledFailure(
     executable,
     ["--input", invalidInput, "--summary-only", "--write", "--output", invalidOutput],
-    "INVALID_JSON_ARRAY",
+    "INPUT_NOT_CHATGPT_EXPORT",
   );
   await expectInstalledFailure(
     executable,
