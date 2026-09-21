@@ -30,8 +30,12 @@ commit, release, issue, workflow artifact, or log.
   commit, detector rule, or generic credential pattern.
 - Confirm the GitHub Actions `Git history secret scan` and `verify` jobs pass on the intended default
   branch and on a pull request.
-- Confirm branch protection requires both jobs before merge.
-- Confirm GitHub private vulnerability reporting is enabled before directing reporters to it.
+- Confirm branch protection requires both jobs before merge. If the current GitHub plan does not
+  offer protection for private repositories, configure it immediately after the explicitly
+  authorized visibility change and before announcing or sharing the public repository.
+- GitHub repository-level private vulnerability reporting is available only for public
+  repositories. After the explicitly authorized visibility change, enable it and verify the
+  **Report a vulnerability** form before announcing or sharing the public repository.
 - Review the final release archive and confirm no private data, test fixture, temporary report,
   environment file, signing key, or credential is present.
 - Confirm the author display name and noreply email in every commit are intentionally public and

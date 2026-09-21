@@ -6,9 +6,13 @@ Only the latest commit on the default branch is intended to receive security fix
 
 ## Reporting a vulnerability
 
-After the GitHub repository is created, report vulnerabilities through a private GitHub Security Advisory. Do not open a public issue containing an export file, conversation text, access token, personal data, sensitive report, or unredacted log.
+Once this repository is public and GitHub private vulnerability reporting is enabled, use its
+**Report a vulnerability** form. Do not open a public issue containing an export file,
+conversation text, access token, personal data, sensitive report, or unredacted log.
 
-Until a private reporting channel exists, public release remains blocked.
+Until that private reporting form is visibly available, do not submit security-sensitive details
+to this repository. The release procedure must enable and verify the form before the public
+repository is announced or shared.
 
 ## Trust boundaries
 
