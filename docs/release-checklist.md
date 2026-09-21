@@ -268,3 +268,22 @@ installation, full-history invocation, exact fingerprint exception, policy guard
 test, or release record. This was not a repeat review of the previously accepted classifier and
 privacy implementation. Public release remains blocked until branch protection and private
 vulnerability reporting are confirmed; this evidence does not make the private repository public.
+
+## Public repository release gates — 2026-09-21
+
+The repository was made public only after explicit maintainer authorization. GitHub-hosted CI
+passed on `main` at `192d2ee`, on pull request #1 at `62d4ce0`, and again on `main` after that
+commit was fast-forwarded. Both `Git history secret scan` and `verify` passed in each current run;
+the failed initial run at `4e1928b` remains visible as superseded historical evidence.
+
+GitHub private vulnerability reporting is enabled. The active `Protect main` ruleset targets the
+default branch with no bypass actors, restricts deletion, requires pull requests with zero
+approvals, requires branches to be current, requires the GitHub Actions checks `Git history secret
+scan` and `verify`, and blocks force pushes. Direct updates, signed commits, deployments, code
+scanning, and preview-only Copilot approval rules are not required.
+
+The public repository gates are complete with documented boundaries: the independent reviewer was
+an AI reviewer rather than a human third party, the local compatibility and memory evidence is from
+macOS, and GitHub-hosted verification is from Ubuntu. This is approval for the source repository's
+public availability, not a claim of universal platform compatibility, zero privacy risk, or a
+versioned package-registry release.
