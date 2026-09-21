@@ -26,6 +26,7 @@ The report is a streamed JSON event array containing:
 - aggregate counts and final privacy assertions.
 
 It does not intentionally contain message bodies, original titles, source conversation IDs, or matched sensitive values. Every outgoing string is scanned and sanitized, and the completed output path is committed only after all events pass the final output scan.
+In a successful report, `privacy.sensitiveValuesIncluded` is always `false`. If the output boundary detects a sensitive value, the run fails before emitting the summary or committing the report rather than producing a report with that field set to `true`.
 The original input filename and the selected output path are not written to the report or terminal output.
 
 ## Storage, deletion, and recovery

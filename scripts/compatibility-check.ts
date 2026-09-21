@@ -60,14 +60,6 @@ export async function checkCompatibility(inputPath: string): Promise<ReportSumma
       2,
     );
   }
-  if (report.privacy.sensitiveValuesIncluded) {
-    throw new CuratorError(
-      "PRIVATE_SAMPLE_OUTPUT_UNSAFE",
-      "最终输出安全断言未通过，不能解除兼容测试阻塞。",
-      2,
-    );
-  }
-
   return report.summary;
 }
 

@@ -1,4 +1,5 @@
 import { CuratorError } from "./errors.ts";
+import { CONFIDENCE_POLICY } from "./classification-policy.ts";
 import { sanitizeOutputString } from "./output-sanitizer.ts";
 import { categoryById, isActiveTaxonomyId } from "./taxonomy.ts";
 import type { ClassificationResult, SensitivityLevel } from "../types.ts";
@@ -225,7 +226,9 @@ export function validateClassification(
     }
     const lowConfidence =
       isConfidenceMap(result.fieldConfidence) &&
-      Object.values(result.fieldConfidence).some((confidence) => confidence < 0.8);
+      Object.values(result.fieldConfidence).some(
+        (confidence) => confidence < CONFIDENCE_POLICY.reviewThreshold,
+      );
     if (reasonSet.has("LOW_CONFIDENCE") !== lowConfidence) {
       errors.push("reasonCodes 与 fieldConfidence 不一致");
     }
@@ -238,7 +241,9 @@ export function validateClassification(
   } else {
     const confidenceRequiresReview =
       isConfidenceMap(result.fieldConfidence) &&
-      Object.values(result.fieldConfidence).some((confidence) => confidence < 0.8);
+      Object.values(result.fieldConfidence).some(
+        (confidence) => confidence < CONFIDENCE_POLICY.reviewThreshold,
+      );
     const invariantRequiresReview =
       constraints.requiresReview === true ||
       (typeof result.sensitivityLevel === "string" && result.sensitivityLevel !== "S0") ||

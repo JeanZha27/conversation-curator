@@ -59,6 +59,28 @@ test("拒绝无效 UTF-8 而不是静默替换字符", async () => {
   }
 });
 
+test("读取期间取消保留 AbortError 而不是误报 INVALID_UTF8", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "curator-stream-abort-"));
+  try {
+    const path = join(directory, "conversations.json");
+    await writeFile(path, `[{"id":"one"},${" ".repeat(128 * 1024)}{"id":"two"}]`);
+    const controller = new AbortController();
+    const iterator = streamJsonObjectArray(path, controller.signal);
+
+    const first = await iterator.next();
+    assert.equal(first.done, false);
+    assert.equal(JSON.parse(first.value!.raw).id, "one");
+    controller.abort();
+
+    await assert.rejects(
+      () => iterator.next(),
+      (error: unknown) => error instanceof Error && error.name === "AbortError",
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("8 MiB 单项上限按 UTF-8 字节而不是 UTF-16 字符执行", async () => {
   const directory = await mkdtemp(join(tmpdir(), "curator-stream-byte-limit-"));
   try {

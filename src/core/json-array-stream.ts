@@ -33,15 +33,20 @@ async function* decodeUtf8(
   chunks: AsyncIterable<Buffer | string>,
 ): AsyncGenerator<string> {
   const decoder = new TextDecoder("utf-8", { fatal: true });
-  try {
-    for await (const chunk of chunks) {
-      yield typeof chunk === "string" ? chunk : decoder.decode(chunk, { stream: true });
+
+  const decode = (chunk?: Buffer, stream = false): string => {
+    try {
+      return decoder.decode(chunk, { stream });
+    } catch {
+      throw new CuratorError("INVALID_UTF8", "输入文件不是有效的 UTF-8 文本。");
     }
-    const final = decoder.decode();
-    if (final) yield final;
-  } catch {
-    throw new CuratorError("INVALID_UTF8", "输入文件不是有效的 UTF-8 文本。");
+  };
+
+  for await (const chunk of chunks) {
+    yield typeof chunk === "string" ? chunk : decode(chunk, true);
   }
+  const final = decode();
+  if (final) yield final;
 }
 
 export async function* streamJsonObjectArray(

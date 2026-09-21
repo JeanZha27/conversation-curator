@@ -4,6 +4,7 @@ import type {
   LifecycleStatus,
   SecurityScan,
 } from "../types.ts";
+import { CONFIDENCE_POLICY } from "./classification-policy.ts";
 import { TAXONOMY, type Category } from "./taxonomy.ts";
 
 export type ClassificationConversation = Pick<
@@ -57,6 +58,13 @@ function chooseCategory(text: string): {
   };
 }
 
+function categoryConfidence(score: number, tied: boolean): number {
+  if (score === 0) return CONFIDENCE_POLICY.noKeyword;
+  if (tied) return CONFIDENCE_POLICY.tiedCategory;
+  if (score === 1) return CONFIDENCE_POLICY.singleKeyword;
+  return CONFIDENCE_POLICY.multipleKeywords;
+}
+
 export function classifyConversation(
   conversation: ClassificationConversation,
   security: SecurityScan,
@@ -65,13 +73,18 @@ export function classifyConversation(
   const searchableText = security.redactedText.toLowerCase();
   const selection = chooseCategory(searchableText);
   const status = lifecycleStatus(searchableText);
-  const confidence = selection.score === 0 ? 0.3 : selection.tied ? 0.5 : selection.score === 1 ? 0.68 : 0.84;
+  const confidence = categoryConfidence(selection.score, selection.tied);
   const fieldConfidence = {
     primaryCategoryId: confidence,
-    lifecycleStatus: status === "active" ? 0.55 : 0.8,
+    lifecycleStatus:
+      status === "active"
+        ? CONFIDENCE_POLICY.activeLifecycle
+        : CONFIDENCE_POLICY.explicitLifecycle,
     suggestedTitle: confidence,
   };
-  const lowConfidence = Object.values(fieldConfidence).some((fieldValue) => fieldValue < 0.8);
+  const lowConfidence = Object.values(fieldConfidence).some(
+    (fieldValue) => fieldValue < CONFIDENCE_POLICY.reviewThreshold,
+  );
   const reasonCodes = [
     "UNKNOWN_PROJECT",
     ...(lowConfidence ? ["LOW_CONFIDENCE"] : []),
@@ -82,7 +95,7 @@ export function classifyConversation(
     ...(conversation.classificationTruncated ? ["CONTENT_TRUNCATED"] : []),
   ];
   const requiresReview =
-    confidence < 0.8 ||
+    confidence < CONFIDENCE_POLICY.reviewThreshold ||
     security.sensitivityLevel !== "S0" ||
     conversation.branchMode === "all-messages-fallback" ||
     !conversation.contentAvailable ||

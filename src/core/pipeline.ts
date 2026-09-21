@@ -17,7 +17,6 @@ import { classifyConversation } from "./heuristic-classifier.ts";
 import { streamJsonObjectArray } from "./json-array-stream.ts";
 import {
   assertOutputValueSafe,
-  outputValueHasSensitiveData,
   safeConversationReference,
   safeSourceHash,
   sanitizeClassificationContext,
@@ -112,11 +111,9 @@ function safeFailure(index: number, error: unknown): SafeFailure {
 async function emitSafely(
   event: ReportEvent,
   onEvent?: (event: ReportEvent) => Promise<void>,
-): Promise<boolean> {
-  const sensitive = outputValueHasSensitiveData(event);
+): Promise<void> {
   assertOutputValueSafe(event);
   await onEvent?.(event);
-  return sensitive;
 }
 
 export async function runCurator(options: RunOptions): Promise<CuratorRunResult> {
@@ -137,7 +134,7 @@ export async function runCurator(options: RunOptions): Promise<CuratorRunResult>
     },
   };
 
-  let finalOutputSensitive = await emitSafely(header, options.onEvent);
+  await emitSafely(header, options.onEvent);
 
   const previewConversations: ConversationReportItem[] = [];
   const previewFailures: SafeFailure[] = [];
@@ -238,15 +235,13 @@ export async function runCurator(options: RunOptions): Promise<CuratorRunResult>
       const failure = safeFailure(item.index, error);
       const sanitized = sanitizeOutputValue(failure);
       assertOutputValueSafe(sanitized.value);
-      finalOutputSensitive ||=
-        await emitSafely({ type: "failure", data: sanitized.value }, options.onEvent);
+      await emitSafely({ type: "failure", data: sanitized.value }, options.onEvent);
       failed += 1;
       if (previewFailures.length < PREVIEW_FAILURES) previewFailures.push(sanitized.value);
       continue;
     }
 
-    finalOutputSensitive ||=
-      await emitSafely({ type: "conversation", data: processed.data }, options.onEvent);
+    await emitSafely({ type: "conversation", data: processed.data }, options.onEvent);
     classified += 1;
     if (processed.data.classification.sensitivityLevel === "S3") s3 += 1;
     if (processed.candidateMatch) s3Candidates += 1;
@@ -289,20 +284,11 @@ export async function runCurator(options: RunOptions): Promise<CuratorRunResult>
     networkUsed: false,
     rawMessageBodiesIncluded: false,
     originalTitlesIncluded: false,
-    sensitiveValuesIncluded: finalOutputSensitive,
+    // This is an invariant of every successful report. Unsafe output aborts
+    // the run before the summary can be emitted or a report can be committed.
+    sensitiveValuesIncluded: false,
   };
-  const summaryEvent: ReportEvent = { type: "summary", summary, privacy };
-  finalOutputSensitive ||= outputValueHasSensitiveData(summaryEvent);
-  if (finalOutputSensitive) {
-    privacy.sensitiveValuesIncluded = true;
-    throw new CuratorError(
-      "OUTPUT_SANITIZATION_FAILED",
-      "最终输出扫描发现敏感值；报告已阻止写出。",
-    );
-  }
-  privacy.sensitiveValuesIncluded = false;
-  finalOutputSensitive ||=
-    await emitSafely({ type: "summary", summary, privacy }, options.onEvent);
+  await emitSafely({ type: "summary", summary, privacy }, options.onEvent);
 
   return {
     header,

@@ -23,7 +23,7 @@ ChatGPT 导出文件（只读）
 ## 环境
 
 本轮使用 Node.js 24.19.0 验证。CLI 运行时不依赖第三方包；贡献者需要安装锁定的 TypeScript 开发依赖以执行静态检查。
-本地 CLI 在 macOS 上验证；Linux 的 GitHub CI `verify` 任务已通过，历史密钥扫描任务修复后仍待托管复测；Windows 尚未验证。
+本地 CLI 在 macOS 上验证；Linux 的 GitHub CI `verify` 与 `Git history secret scan` 任务均已通过；Windows 尚未验证。
 
 ## 使用
 
@@ -61,6 +61,7 @@ header → conversation / failure（逐条）→ summary
 并允许同一主版本内新增汇总字段。
 
 源对话 ID 在输出前转换为单向本地引用，原始文件名不会写入报告或终端；错误、标签和分类字段等所有输出字符串都会再次扫描和脱敏。只有最终序列化输出扫描通过后，临时报告才会原子提交。
+成功报告中的 `privacy.sensitiveValuesIncluded` 固定为 `false`：如果输出扫描发现敏感值，运行会在汇总事件写出和报告提交前失败，而不会生成一个把该字段设为 `true` 的报告。
 
 ## 测试
 

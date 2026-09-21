@@ -258,7 +258,7 @@ exact commit/file/rule/line fingerprint. The repository policy pins the entire i
 rejects additions or edits. No path-wide, rule-wide, or generic key-format exception was added.
 Gitleaks v8.30.0 then scanned all three local commits and the tracked-file snapshot separately:
 both reported zero findings. Type-check, 54 tests, build, and repository policy passed. The
-hosted rerun for commit `54b4115` completed successfully in GitHub Actions run `35535229043`.
+hosted rerun for commit `54b4115` completed successfully in GitHub Actions run `35537020783`.
 The green overall result confirms both jobs in the fixed two-job workflow passed; the red run for
 `4e1928b` is the superseded first run described above.
 
@@ -287,3 +287,25 @@ an AI reviewer rather than a human third party, the local compatibility and memo
 macOS, and GitHub-hosted verification is from Ubuntu. This is approval for the source repository's
 public availability, not a claim of universal platform compatibility, zero privacy risk, or a
 versioned package-registry release.
+
+## Independent public due diligence follow-up — 2026-09-21
+
+An independent review of public commit `5f5ff78` confirmed the repository's privacy boundary, full-history
+secret scan, hosted checks, ruleset, dependency locking, and closed report schema. It also identified
+focused correctness and maintenance defects: redaction markers could influence classification, read-time
+cancellation could be misreported as invalid UTF-8, URI and adjacent non-ASCII path handling was
+inconsistent, the successful-report privacy invariant was implemented through unreachable state, and
+the README and one hosted-run reference were stale.
+
+The follow-up changes add regression coverage for classification-marker isolation and read-time
+cancellation, preserve arbitrary ASCII URI schemes while privacy-biasing adjacent non-ASCII absolute
+paths, make `sensitiveValuesIncluded: false` an explicit successful-report invariant, centralize
+classification confidence policy, correct the evidence record, and bound hosted CI concurrency and
+runtime. The review also corrected its earlier performance wording: the classifier compiles 46 keyword
+regular expressions per conversation, not millions per call, and measured impact was negligible; no
+performance rewrite was made.
+
+Local follow-up validation passed 56/56 tests, strict type-check, production build, repository policy,
+the private de-identified compatibility sample (22/22 classified), package dry-run, and installed-package
+smoke testing. The large memory benchmarks were not repeated because this change does not alter input
+buffering or retained source data. GitHub-hosted checks remain required on the follow-up pull request.
