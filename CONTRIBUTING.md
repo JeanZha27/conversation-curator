@@ -41,6 +41,10 @@ A missing private sample is a blocked check, not a passing or skipped check. A s
 
 Pull requests should explain the changed user behavior, privacy impact, test evidence, and any unverified assumption. Do not weaken output validation, sensitive scanning, source-file immutability, or failure visibility to make tests pass.
 
+## Review model
+
+This is currently a single-maintainer repository. Pull requests provide a reviewable change record and enforce automated checks, but they do not by themselves constitute independent human review. Security-sensitive changes should explicitly record any external review obtained and must not describe automated or AI-assisted review as human third-party approval.
+
 CI also scans complete Git history with Gitleaks. An intentional synthetic detector fixture may use
 `gitleaks:allow` only after review and exact-line approval in the repository policy manifest. Never
 suppress an entire test directory or use an allowlist for a real-looking value. The root Gitleaks

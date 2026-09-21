@@ -13,13 +13,13 @@
 最简单的调用方式：
 
 1. 从 ChatGPT 导出数据并解压，找到 `conversations.json`。
-2. 在 Codex 中输入：
+2. 在 Codex 中只请求本地命令，不提供真实路径：
 
    ```text
-   $conversation-curator 请整理这个文件：/path/to/conversations.json
+   $conversation-curator 请给我安全的本地运行命令，不要读取文件。
    ```
 
-3. 先查看汇总数量；如果需要详细报告，再明确告诉它保存到哪个本地路径。
+3. 在自己的终端中替换命令里的 `<path>` 并运行，只把汇总数量贴回 Codex；如果需要详细报告，也由你在终端中选择本地保存路径。
 
 适合用来：快速了解对话主要分布、发现需要人工复核的项目，并在整理前检查明显的敏感信息风险。它不是云端同步工具，也不能直接操作 ChatGPT 里的会话。
 
@@ -39,11 +39,13 @@ ChatGPT 导出文件（只读）
 
 ## 作为 Codex Skill 使用
 
-本仓库根目录的 [SKILL.md](SKILL.md) 是面向最终用户的 Skill 入口。准备 Node.js 24 后，将完整仓库放在 Codex 的用户 Skill 目录（例如 macOS/Linux 的 `~/.agents/skills/conversation-curator/`），确认其中同时存在 `SKILL.md` 与 `src/cli.ts`。如果 Skill 没有出现，重启 Codex；然后可用 `$conversation-curator` 请求整理已导出的 ChatGPT 对话。它只在你提供本地导出文件路径后运行；Skill 约定只把汇总计数显示给 Codex，计数会成为当前 Codex 对话的一部分。详细分类建议保存在你明确指定的本地报告中，由你自行查看和决定是否采纳。当前不支持直接重命名、移动或归档平台上的对话。
+本仓库根目录的 [SKILL.md](SKILL.md) 是面向最终用户的 Skill 入口。准备 Node.js 24 后，将完整仓库放在 Codex 的用户 Skill 目录（例如 macOS/Linux 的 `~/.agents/skills/conversation-curator/`），确认其中同时存在 `SKILL.md` 与 `src/cli.ts`。如果 Skill 没有出现，重启 Codex。
+
+为避免把原始导出路径和读取权限交给 Agent，Skill 默认只生成带 `<path>` 占位符的命令，由你在自己的终端中替换路径并运行。你可以把 `--summary-only` 的聚合计数贴回 Codex 请求解释；详细报告由你在本地查看，不交给 Agent 读取。当前不支持直接重命名、移动或归档平台上的对话。
 
 ## 环境要求
 
-项目使用 Node.js 24.19.0 验证。CLI 运行时不依赖第三方包；贡献者需要安装锁定的 TypeScript 开发依赖以执行静态检查。
+项目使用 Node.js 24.19.0 和 pnpm 11 验证。CLI 运行时不依赖第三方包；贡献者需要安装锁定的 TypeScript 开发依赖以执行静态检查。
 本地 CLI 在 macOS 上验证；Linux 的 GitHub CI `verify` 与 `Git history secret scan` 任务均已通过；Windows 尚未验证。
 
 ## 使用
@@ -54,7 +56,7 @@ ChatGPT 导出文件（只读）
 node src/cli.ts --input /path/to/conversations.json
 ```
 
-通过 Codex 调用时只显示汇总计数：
+只显示适合贴回 Codex 的汇总计数：
 
 ```bash
 node src/cli.ts --input /path/to/conversations.json --summary-only
@@ -84,23 +86,26 @@ header → conversation / failure（逐条）→ summary
 源对话 ID 在输出前转换为单向本地引用，原始文件名不会写入报告或终端；错误、标签和分类字段等所有输出字符串都会再次扫描和脱敏。只有最终序列化输出扫描通过后，临时报告才会原子提交。
 成功报告中的 `privacy.sensitiveValuesIncluded` 固定为 `false`：如果输出扫描发现敏感值，运行会在汇总事件写出和报告提交前失败，而不会生成一个把该字段设为 `true` 的报告。
 
+输入必须是 `.json` 顶层对象数组，首个非空元素还必须包含 ChatGPT 会话的稳定 ID 与 `mapping`。不符合时返回 `INPUT_NOT_CHATGPT_EXPORT`，不会继续哈希或处理完整文件。CLI 成功返回 0；空结果、重复 ID 或部分失败返回 2；校验及运行错误返回 1；取消返回 130。
+
 ## 隐私模型
 
 - 输入文件只读，运行前后不应发生变化。
 - 确定性敏感扫描覆盖标题、当前分支全部文本及文件名、内容类型等白名单附件元数据；分类只接收脱敏后的标题，以及首三条和末三条文本采样。
-- 单条分类文本超过 32 Ki 字符时仅保留首尾片段并强制人工复核；确定性敏感扫描仍覆盖完整文本。
 - 直接运行 CLI 时会在本地启动一个带固定 V8 堆边界的子进程；输入路径仅作为本机进程参数传递，不上传或记录。
 - 附件正文、二进制、图片和音频内容不进入扫描或分类上下文。
 - 报告保存分组文件哈希、单向对话引用、统计和分类字段，但不保存消息正文、原始标题、源对话 ID 或敏感匹配值。
 - 没有数据库和跨设备同步；删除导出的报告即可删除这次运行保存的结果。
 - 当前适配器已用一份从真实导出保留结构、替换全部内容的本地脱敏副本完成兼容检查（22/22 项可分类）。该副本不随仓库或安装包发布；验证只覆盖这份导出的结构，不代表所有导出版本都兼容。
 - 空数组、没有成功分类项、重复 ID 或部分失败项使 CLI 返回非零状态；此时报告可供排查，但不表示完整成功。S3 和 S3 候选汇总计数也包含已扫描但未分类的重复项。
+- 威胁模型：CLI 防止合作式使用中的意外泄露，例如把正文写入报告、提交仓库或发送给远程模型；它不能隔离已经拥有本机文件读取权限的 Agent 或进程。默认采用“用户运行、只分享汇总”的人类中继。需要更强保证时，必须使用操作系统权限分离或隔离环境。
 
 ## 限制
 
 - 输入文件上限：256 MiB。
 - 对话数量上限：50,000。
 - 单个对话对象上限：8 MiB。
+- 单条分类文本超过 32 Ki 字符时仅保留首尾片段并强制人工复核；确定性敏感扫描仍覆盖完整文本。
 - 最近一次本机数量基准：50,000 条、15,316,673 字节输入、50,950,654 字节输出；峰值 RSS 128.1 MiB。
 - 最近一次本机近上限基准：4,000 条、261,212,673 字节输入（约 249.1 MiB）、4,148,654 字节输出；峰值 RSS 122.7 MiB。
 - 最近一次本机大对象基准：30 条、225,008,913 字节输入（单条正文约 7.15 MiB）、31,754 字节输出；峰值 RSS 172.6 MiB。
@@ -139,6 +144,7 @@ pnpm compatibility:private
 
 本项目采用 [Apache-2.0](LICENSE) 许可证。隐私和安全说明分别见
 [PRIVACY.md](PRIVACY.md) 与 [SECURITY.md](SECURITY.md)。
+[CONTRIBUTING.md](CONTRIBUTING.md) 说明贡献与复核约定。
 版本记录见 [CHANGELOG.md](CHANGELOG.md)。
 
 详细需求和验收案例见 [docs/implementation-spec.md](docs/implementation-spec.md)。

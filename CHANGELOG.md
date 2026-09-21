@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Made the Codex Skill use a human-run relay, documented the filesystem threat boundary, and reject unrelated JSON before full-file processing.
+- Aligned bilingual operational details and preserved complete `main` CI runs while still cancelling superseded branch runs.
 - Added an English README, beginner-friendly usage introductions, and complete repository/package discovery metadata.
 - Reduced release documentation to current gates and evidence, and stopped treating compact Chinese choice lists as local paths.
 - Preserve cancellation errors during streamed UTF-8 decoding and add read-time cancellation coverage.

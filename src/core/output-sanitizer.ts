@@ -26,6 +26,8 @@ function isAsciiSchemeFragment(match: string, offset: number, input: string): bo
   if (match[2] !== "/" || input[offset + 3] !== "/") return false;
   const prefix = input.slice(0, offset).match(/[A-Z][A-Z0-9+.-]*$/iu)?.[0] ?? "";
   const driveLetter = match[0] ?? "";
+  // Treat every ASCII <scheme>:// prefix as a network URL. This deliberately
+  // includes drive-like C:// text; ordinary C:/ and C:\\ paths remain covered.
   return /^[A-Z][A-Z0-9+.-]*$/iu.test(`${prefix}${driveLetter}`);
 }
 
@@ -41,8 +43,9 @@ function isPosixAbsolutePath(match: string, offset: number, input: string): bool
   const previous = input[offset - 1] ?? "";
   if (!/[\p{L}\p{N}]/u.test(previous)) return true;
   // The regex boundary already excludes ASCII relative paths such as
-  // project/home/page. For CJK-adjacent text, keep ordinary one-segment
-  // phrases such as 和/或 while protecting known roots and multi-level paths.
+  // project/home/page. Treat 男/女/其他-style compact CJK choices as text;
+  // this also exempts any one-Han-character prefix with only 1-2-character
+  // segments. Other CJK-adjacent known roots and multi-level paths stay covered.
   if (isCompactCjkChoiceList(match, offset, input)) return false;
   return (
     /^\/(?:Applications|Library|System|Users|Volumes|bin|dev|etc|home|opt|private|root|run|sbin|srv|tmp|usr|var)(?:\/|$)/u.test(match) ||
