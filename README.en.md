@@ -86,7 +86,7 @@ The current `schemaVersion` is `1.3`. Consumers should parse by version and acce
 ## Privacy model
 
 - The selected export is opened read-only.
-- Sensitive-data scanning covers all text on the selected conversation branch and allowlisted attachment metadata.
+- Sensitive-data scanning covers the title, all text on the selected conversation branch, and allowlisted attachment metadata.
 - Classification receives only the title and a redacted sample of the first three and last three textual messages.
 - Attachment bodies, binary data, images, and audio are excluded.
 - Source conversation IDs become one-way local references.
