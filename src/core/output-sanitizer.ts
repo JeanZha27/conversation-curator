@@ -17,23 +17,30 @@ type OutputDetector = {
 function isAllowedNetworkUrlPath(offset: number, input: string): boolean {
   const prefix = input.slice(0, offset);
   return (
-    /https?:\/\/[^\s"'<>]*$/iu.test(prefix) ||
+    /[A-Z][A-Z0-9+.-]*:\/\/[^\s"'<>]*$/iu.test(prefix) ||
     /(?:^|[\s("'\[{])\/\/[^\s"'<>]*$/u.test(prefix)
   );
 }
 
-function isHttpSchemeFragment(match: string, offset: number, input: string): boolean {
-  if (match[2] !== "/") return false;
+function isAsciiSchemeFragment(match: string, offset: number, input: string): boolean {
+  if (match[2] !== "/" || input[offset + 3] !== "/") return false;
   const prefix = input.slice(0, offset).match(/[A-Z][A-Z0-9+.-]*$/iu)?.[0] ?? "";
   const driveLetter = match[0] ?? "";
-  return /^https?$/iu.test(`${prefix}${driveLetter}`);
+  return /^[A-Z][A-Z0-9+.-]*$/iu.test(`${prefix}${driveLetter}`);
 }
 
 function isPosixAbsolutePath(match: string, offset: number, input: string): boolean {
   if (isAllowedNetworkUrlPath(offset, input)) return false;
   const previous = input[offset - 1] ?? "";
   if (!/[\p{L}\p{N}]/u.test(previous)) return true;
-  return /^\/(?:Applications|Library|System|Users|Volumes|bin|dev|etc|home|opt|private|root|run|sbin|srv|tmp|usr|var)(?:\/|$)/u.test(match);
+  // The regex boundary already excludes ASCII relative paths such as
+  // project/home/page. For CJK-adjacent text, keep ordinary one-segment
+  // phrases such as 和/或 while protecting known roots and multi-level paths.
+  if (/[A-Z0-9]/iu.test(previous)) return false;
+  return (
+    /^\/(?:Applications|Library|System|Users|Volumes|bin|dev|etc|home|opt|private|root|run|sbin|srv|tmp|usr|var)(?:\/|$)/u.test(match) ||
+    match.indexOf("/", 1) >= 0
+  );
 }
 
 // Output boundaries need broader privacy protection than the classifier's
@@ -97,7 +104,7 @@ const OUTPUT_PRIVACY_DETECTORS: OutputDetector[] = [
   {
     type: "WINDOWS_ABSOLUTE_PATH",
     pattern: /(?:[A-Z]:[\\/]|\\\\)[^\r\n]*/giu,
-    validate: (match, offset, input) => !isHttpSchemeFragment(match, offset, input),
+    validate: (match, offset, input) => !isAsciiSchemeFragment(match, offset, input),
     redactWholeLine: true,
   },
 ];
@@ -160,7 +167,7 @@ export function sanitizeOutputString(value: string): Sanitized<string> {
 }
 
 export function sanitizeClassificationContext(value: string): string {
-  return sanitizeOutputString(value).value;
+  return sanitizeOutputString(value).value.replace(/\[REDACTED:[A-Z0-9_]+\]/gu, " ");
 }
 
 export function sanitizeOutputValue<T>(value: T): Sanitized<T> {
@@ -206,19 +213,29 @@ function sensitiveOutputPaths(value: unknown): string[] {
 }
 
 export function outputValueHasSensitiveData(value: unknown): boolean {
-  if (sensitiveOutputPaths(value).length > 0) return true;
-  return sanitizeOutputString(JSON.stringify(value)).findings > 0;
+  return assessOutputSafety(value).unsafe;
 }
 
 export function assertOutputValueSafe(value: unknown): void {
-  const unsafePaths = sensitiveOutputPaths(value);
-  const serializedUnsafe = sanitizeOutputString(JSON.stringify(value)).findings > 0;
-  if (unsafePaths.length > 0 || serializedUnsafe) {
+  const assessment = assessOutputSafety(value);
+  if (assessment.unsafe) {
     throw new CuratorError(
       "OUTPUT_SANITIZATION_FAILED",
-      unsafePaths.length > 0
-        ? `最终输出安全扫描失败（${unsafePaths.slice(0, 3).join("、")}）。`
+      assessment.unsafePaths.length > 0
+        ? `最终输出安全扫描失败（${assessment.unsafePaths.slice(0, 3).join("、")}）。`
         : "最终序列化输出安全扫描失败。",
     );
   }
+}
+
+function assessOutputSafety(value: unknown): {
+  unsafe: boolean;
+  unsafePaths: string[];
+} {
+  const unsafePaths = sensitiveOutputPaths(value);
+  const serializedUnsafe = sanitizeOutputString(JSON.stringify(value)).findings > 0;
+  return {
+    unsafe: unsafePaths.length > 0 || serializedUnsafe,
+    unsafePaths,
+  };
 }

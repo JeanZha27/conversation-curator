@@ -364,7 +364,13 @@ test("输出脱敏器覆盖邮箱、手机号和本地绝对路径", () => {
     assert.doesNotThrow(() => assertOutputValueSafe(sanitized.value));
   }
 
-  for (const url of ["https://example.com/path", "http://localhost:3000/report", "//cdn.example.com/a"]) {
+  for (const url of [
+    "https://example.com/path",
+    "http://localhost:3000/report",
+    "ftp://files.example.com/pub/a.txt",
+    "wss://socket.example.com/a",
+    "//cdn.example.com/a",
+  ]) {
     assert.equal(sanitizeOutputString(url).findings, 0);
     assert.equal(outputValueHasSensitiveData(url), false);
   }
@@ -412,6 +418,7 @@ test("输出脱敏器覆盖点分隔号码、紧凑国际号码和中文紧邻�
     "请看/Users/example/private.txt",
     "参见/var/example/config.json",
     "位于/Volumes/Example/data.json",
+    "配置/我的/私密/目录 请查看",
   ]) {
     assert.ok(sanitizeOutputString(value).findings > 0);
     assert.equal(outputValueHasSensitiveData(value), true);
@@ -437,6 +444,30 @@ test("分类上下文复用完整输出隐私策略", () => {
 
   for (const value of sensitiveValues) assert.equal(sanitized.includes(value), false);
   assert.equal(outputValueHasSensitiveData(sanitized), false);
+});
+
+test("分类上下文中的脱敏占位符不参与关键词匹配", () => {
+  const sanitized = sanitizeClassificationContext("alice@example.com");
+  const result = classifyConversation(
+    {
+      sourceConversationId: safeConversationReference("redaction-marker"),
+      contentAvailable: true,
+      classificationTruncated: false,
+      branchMode: "current",
+    },
+    {
+      redactedText: sanitized,
+      sensitivityLevel: "S0",
+      riskFlags: [],
+      matchCounts: {},
+      hardMatch: false,
+      candidateMatch: false,
+    },
+    new Date("2026-01-01T00:00:00Z"),
+  );
+
+  assert.equal(sanitized.includes("EMAIL"), false);
+  assert.equal(result.primaryCategoryId, "other");
 });
 
 test("分类字段复用统一输出隐私规则", () => {
