@@ -17,6 +17,7 @@ blocked, or failing stops the release.
 - `pnpm benchmark:memory -- --items 50000 --max-rss-mib 256`
 - `pnpm benchmark:input-limit`
 - `pnpm benchmark:large-items`
+- `pnpm benchmark:mapping-nodes`
 - `pnpm pack:check`
 - `pnpm package:smoke`
 - `pnpm compatibility:private`
@@ -42,6 +43,8 @@ missing sample, zero classified items, or any failed item blocks the release.
 - Confirm public commit names and noreply addresses are intentional.
 - Have a non-author reviewer follow the README in a clean environment and exercise invalid input,
   repeated execution, cancellation, and report-write failure.
+- Record review provenance. If no non-author human review was obtained, state that boundary and do
+  not describe automated or AI-assisted analysis as independent approval.
 
 The secret-scan workflow checks out full history and produces no pull-request comment or uploaded
 findings artifact.
@@ -54,6 +57,10 @@ findings artifact.
 - The installed-package smoke test completes the import, scan, and export loop.
 - Known limitations and unverified compatibility claims remain visible.
 - A human maintainer approves the release.
+- The release commit has passed required `main` checks, the annotated `vMAJOR.MINOR.PATCH` tag is
+  cryptographically signed and passes `git verify-tag`, and the GitHub Release points to that exact
+  tag and links the passing CI run.
+- `GOVERNANCE.md` still matches repository ownership, support status, and publication scope.
 
 ## Verified public baseline — 2026-09-21
 

@@ -27,6 +27,7 @@ pnpm build
 pnpm benchmark:memory -- --items 50000 --max-rss-mib 256
 pnpm benchmark:input-limit
 pnpm benchmark:large-items
+pnpm benchmark:mapping-nodes
 pnpm pack:check
 pnpm package:smoke
 ```
@@ -44,6 +45,10 @@ Pull requests should explain the changed user behavior, privacy impact, test evi
 ## Review model
 
 This is currently a single-maintainer repository. Pull requests provide a reviewable change record and enforce automated checks, but they do not by themselves constitute independent human review. Security-sensitive changes should explicitly record any external review obtained and must not describe automated or AI-assisted review as human third-party approval.
+
+Every pull request must complete the review-provenance section. See [GOVERNANCE.md](GOVERNANCE.md)
+for ownership, maintainer admission, versioning, and signed-release policy. CODEOWNERS identifies the
+current owner; it does not create an independent reviewer.
 
 CI also scans complete Git history with Gitleaks. An intentional synthetic detector fixture may use
 `gitleaks:allow` only after review and exact-line approval in the repository policy manifest. Never

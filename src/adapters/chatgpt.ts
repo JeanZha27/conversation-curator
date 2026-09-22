@@ -37,6 +37,21 @@ const ATTACHMENT_METADATA_KEYS = new Set([
   "mimeType",
 ]);
 const MAX_CLASSIFICATION_MESSAGE_CHARACTERS = 32 * 1024;
+export const MAX_MAPPING_NODES = 50_000;
+
+function assertMappingNodeLimit(mapping: JsonRecord): void {
+  let count = 0;
+  for (const key in mapping) {
+    if (!Object.hasOwn(mapping, key)) continue;
+    count += 1;
+    if (count > MAX_MAPPING_NODES) {
+      throw new CuratorError(
+        "MAPPING_NODE_LIMIT_EXCEEDED",
+        `对话 mapping 节点超过 ${MAX_MAPPING_NODES.toLocaleString("en-US")} 个安全上限。`,
+      );
+    }
+  }
+}
 
 function attachmentMetadata(value: unknown): string[] {
   if (!isRecord(value)) return [];
@@ -161,6 +176,7 @@ export function parseChatGptConversation(value: unknown): CanonicalConversation 
   if (!isRecord(value.mapping)) {
     throw new CuratorError("MISSING_MAPPING", "对话项缺少 mapping 对象。");
   }
+  assertMappingNodeLimit(value.mapping);
 
   let branchMode: CanonicalConversation["branchMode"] = "all-messages-fallback";
   let messages: CanonicalMessage[] | null = null;

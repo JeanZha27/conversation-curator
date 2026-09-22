@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
-import { cp, link, mkdir, mkdtemp, readFile, rm, symlink, truncate, writeFile } from "node:fs/promises";
+import { access, cp, link, mkdir, mkdtemp, readFile, rm, stat, symlink, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
 import { main } from "../src/cli.ts";
 import { CuratorError } from "../src/core/errors.ts";
+import { createInputSnapshot } from "../src/core/input-snapshot.ts";
 import { createJsonEventSink } from "../src/core/json-event-sink.ts";
 import { runCurator } from "../src/core/pipeline.ts";
 import type { ReportEvent } from "../src/types.ts";
@@ -164,6 +165,7 @@ test("输入到流式安全报告的完整链路保持源文件不变", async ()
     assert.equal(result.summary.failed, 0);
     assert.equal(result.summary.s3, 1);
     assert.equal(result.privacy.sensitiveValuesIncluded, false);
+    assert.equal(result.privacy.crossRunLinkable, true);
 
     const written = await readFile(outputPath, "utf8");
     assert.equal(written.includes(secret), false);
@@ -537,7 +539,29 @@ test("报告写入回调失败会中止整次运行而不会伪装成单项失�
   }
 });
 
-test("处理期间源文件变化会使整次结果失效", async () => {
+test("安全快照使用 0600 权限并在清理后消失", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "curator-snapshot-mode-"));
+  try {
+    const inputPath = join(directory, "conversations.json");
+    const content = JSON.stringify([{ id: "snapshot", mapping: {} }]);
+    await writeFile(inputPath, content);
+    const snapshot = await createInputSnapshot(inputPath);
+    const snapshotPath = snapshot.path;
+
+    assert.equal(await readFile(snapshotPath, "utf8"), content);
+    assert.equal((await stat(snapshotPath)).mode & 0o777, 0o600);
+    assert.equal(snapshot.sizeBytes, Buffer.byteLength(content));
+    assert.equal(snapshot.sha256, sha256(Buffer.from(content)));
+
+    await snapshot.cleanup();
+    await snapshot.cleanup();
+    await assert.rejects(() => access(snapshotPath));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("处理期间替换源路径不会改变已捕获的输入快照", async () => {
   const directory = await mkdtemp(join(tmpdir(), "curator-source-change-"));
   try {
     const inputPath = join(directory, "conversations.json");
@@ -548,20 +572,30 @@ test("处理期间源文件变化会使整次结果失效", async () => {
       mapping: { message: node(null, "普通内容", 1) },
     }]);
     await writeFile(inputPath, original);
+    const replacement = JSON.stringify([{
+      id: "replacement",
+      title: "替换内容",
+      mapping: {},
+    }]);
     let changed = false;
-    await assert.rejects(
-      () => runCurator({
-        inputPath,
-        onEvent: async (event) => {
-          if (!changed && event.type === "conversation") {
-            changed = true;
-            await writeFile(inputPath, `${original} `);
-          }
-        },
-      }),
-      (error: unknown) =>
-        error instanceof CuratorError && error.code === "SOURCE_CHANGED_DURING_RUN",
+    const result = await runCurator({
+      inputPath,
+      onEvent: async (event) => {
+        if (!changed && event.type === "conversation") {
+          changed = true;
+          await writeFile(inputPath, replacement);
+        }
+      },
+    });
+
+    assert.equal(changed, true);
+    assert.equal(result.summary.classified, 1);
+    assert.equal(result.summary.failed, 0);
+    assert.equal(
+      result.header.source.sha256,
+      `sha256:${sha256(Buffer.from(original)).match(/.{1,8}/gu)!.join(":")}`,
     );
+    assert.equal(await readFile(inputPath, "utf8"), replacement);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -576,7 +610,7 @@ test("无 --force 时提交竞态不会覆盖后来创建的目标文件", async
     const sink = await createJsonEventSink({ outputPath, sourcePath: inputPath, force: false });
     await sink.write({
       type: "header",
-      schemaVersion: "1.3",
+      schemaVersion: "1.4",
       generatedAt: "2026-01-01T00:00:00.000Z",
       source: {
         platform: "chatgpt",

@@ -37,7 +37,8 @@
     "LICENSE",
     "PRIVACY.md",
     "SECURITY.md",
-    "CONTRIBUTING.md"
+    "CONTRIBUTING.md",
+    "GOVERNANCE.md"
   ],
   "engines": {
     "node": ">=24"
@@ -52,6 +53,7 @@
     "benchmark:memory": "node scripts/memory-benchmark.ts",
     "benchmark:input-limit": "node scripts/memory-benchmark.ts --items 4000 --payload-bytes 65000 --max-rss-mib 256",
     "benchmark:large-items": "node scripts/memory-benchmark.ts --items 30 --payload-bytes 7500000 --max-rss-mib 256",
+    "benchmark:mapping-nodes": "node scripts/mapping-node-benchmark.ts",
     "compatibility:private": "node --max-old-space-size=96 --max-semi-space-size=2 scripts/compatibility-check.ts",
     "pack:check": "pnpm pack --dry-run --json",
     "package:smoke": "node scripts/package-smoke.ts",

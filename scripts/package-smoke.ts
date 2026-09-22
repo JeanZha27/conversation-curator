@@ -102,7 +102,7 @@ try {
   const header = events.find((event) => event.type === "header");
   if (
     header?.type !== "header" ||
-    header.schemaVersion !== "1.3" ||
+    header.schemaVersion !== "1.4" ||
     summary?.type !== "summary" ||
     conversation?.type !== "conversation" ||
     summary.summary.classified !== 1 ||
@@ -112,6 +112,7 @@ try {
     summary.privacy.rawMessageBodiesIncluded ||
     summary.privacy.originalTitlesIncluded ||
     summary.privacy.sensitiveValuesIncluded ||
+    summary.privacy.crossRunLinkable !== true ||
     conversation.data.conversationRef === sourceId ||
     conversation.data.classificationTruncated ||
     eventTypes.join(",") !== "header,conversation,summary" ||
@@ -149,7 +150,17 @@ try {
     throw new Error("installed package left an incomplete report after failure");
   }
   const installedRoot = join(consumer, "node_modules", "conversation-curator");
-  for (const required of ["README.md", "SKILL.md", "CHANGELOG.md", "LICENSE", "PRIVACY.md", "SECURITY.md"]) {
+  for (const required of [
+    "README.md",
+    "README.en.md",
+    "SKILL.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "PRIVACY.md",
+    "SECURITY.md",
+    "CONTRIBUTING.md",
+    "GOVERNANCE.md",
+  ]) {
     await access(join(installedRoot, required));
   }
   const forbiddenPackageMarkers = ["/Users/", ".chatgpt-projects/"];

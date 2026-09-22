@@ -20,3 +20,10 @@ export function outputCleanupError(): CuratorError {
     "临时报告清理失败；请在输出目录中手动删除隐藏的 .tmp 报告文件。",
   );
 }
+
+export function inputSnapshotCleanupError(): CuratorError {
+  return new CuratorError(
+    "INPUT_SNAPSHOT_CLEANUP_FAILED",
+    "输入快照清理失败；请检查系统临时目录中的 conversation-curator-input-* 目录。",
+  );
+}

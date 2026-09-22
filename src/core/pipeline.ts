@@ -1,7 +1,3 @@
-import { createHash } from "node:crypto";
-import { constants } from "node:fs";
-import { access, open, stat } from "node:fs/promises";
-import { extname, resolve } from "node:path";
 import { parseChatGptConversation } from "../adapters/chatgpt.ts";
 import type {
   ConversationReportItem,
@@ -14,6 +10,7 @@ import type {
 } from "../types.ts";
 import { CuratorError } from "./errors.ts";
 import { classifyConversation } from "./heuristic-classifier.ts";
+import { createInputSnapshot, type InputSnapshot } from "./input-snapshot.ts";
 import { streamJsonObjectArray } from "./json-array-stream.ts";
 import {
   assertOutputValueSafe,
@@ -25,15 +22,9 @@ import {
 import { assertValidClassification } from "./result-validator.ts";
 import { scanSensitiveSegments } from "./security-scanner.ts";
 
-const MAX_INPUT_BYTES = 256 * 1024 * 1024;
 const MAX_CONVERSATIONS = 50_000;
 const PREVIEW_CONVERSATIONS = 20;
 const PREVIEW_FAILURES = 10;
-
-type SourceInfo = {
-  path: string;
-  sizeBytes: number;
-};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -90,53 +81,12 @@ function abortError(): Error {
   return error;
 }
 
-async function validateSource(inputPath: string): Promise<SourceInfo> {
-  const path = resolve(inputPath);
-  if (extname(path).toLowerCase() !== ".json") {
-    throw new CuratorError("INVALID_FILE_TYPE", "输入文件必须使用 .json 扩展名。");
-  }
-
-  let sourceStat;
-  try {
-    sourceStat = await stat(path);
-    await access(path, constants.R_OK);
-  } catch {
-    throw new CuratorError("INPUT_NOT_READABLE", "输入文件不存在或不可读取。");
-  }
-  if (!sourceStat.isFile()) throw new CuratorError("INPUT_NOT_FILE", "输入路径不是普通文件。");
-  if (sourceStat.size === 0) throw new CuratorError("INPUT_EMPTY", "输入文件为空。");
-  if (sourceStat.size > MAX_INPUT_BYTES) {
-    throw new CuratorError("INPUT_TOO_LARGE", "输入文件超过本轮 256 MiB 安全上限。");
-  }
-  return {
-    path,
-    sizeBytes: sourceStat.size,
-  };
-}
-
-async function sha256File(filePath: string, signal?: AbortSignal): Promise<string> {
-  if (signal?.aborted) throw abortError();
-  const hash = createHash("sha256");
-  const handle = await open(filePath, "r");
-  const buffer = Buffer.allocUnsafe(1024 * 1024);
-  try {
-    while (true) {
-      if (signal?.aborted) throw abortError();
-      const { bytesRead } = await handle.read(buffer, 0, buffer.length, null);
-      if (bytesRead === 0) break;
-      hash.update(buffer.subarray(0, bytesRead));
-    }
-    return hash.digest("hex");
-  } finally {
-    await handle.close();
-  }
-}
-
 function safeFailure(index: number, error: unknown): SafeFailure {
   const safeErrors: Record<string, string> = {
     INVALID_CONVERSATION: "对话项不是受支持的对象。",
     MISSING_CONVERSATION_ID: "对话项缺少稳定 ID。",
     MISSING_MAPPING: "对话项缺少 mapping 对象。",
+    MAPPING_NODE_LIMIT_EXCEEDED: "对话 mapping 节点数量超过安全上限。",
     INVALID_BRANCH: "对话分支结构无效。",
     CLASSIFICATION_INVALID: "分类结果未通过运行时校验。",
     OUTPUT_SANITIZATION_FAILED: "该项输出未通过隐私校验。",
@@ -158,23 +108,22 @@ async function emitSafely(
   await onEvent?.(event);
 }
 
-export async function runCurator(options: RunOptions): Promise<CuratorRunResult> {
-  const source = await validateSource(options.inputPath);
-  // Reject an unrelated JSON file after inspecting at most its first array
-  // element, before hashing or processing the complete file.
+async function runSnapshot(
+  options: RunOptions,
+  source: InputSnapshot,
+): Promise<CuratorRunResult> {
   await validateChatGptExportShape(source.path, options.signal);
-  const beforeHash = await sha256File(source.path, options.signal);
   const generatedAt = (options.now ?? new Date()).toISOString();
   const header: ReportHeaderEvent = {
     type: "header",
-    schemaVersion: "1.3",
+    schemaVersion: "1.4",
     generatedAt,
     source: {
       platform: "chatgpt",
       // A source filename is user-controlled metadata and may itself contain
       // personal data. Keep the report useful without persisting that value.
       fileName: "conversations.json",
-      sha256: safeSourceHash(beforeHash),
+      sha256: safeSourceHash(source.sha256),
       sizeBytes: source.sizeBytes,
     },
   };
@@ -303,14 +252,6 @@ export async function runCurator(options: RunOptions): Promise<CuratorRunResult>
     }
   }
 
-  const afterHash = await sha256File(source.path, options.signal);
-  if (afterHash !== beforeHash) {
-    throw new CuratorError(
-      "SOURCE_CHANGED_DURING_RUN",
-      "输入文件在处理期间发生变化，结果已丢弃；请在文件稳定后重试。",
-    );
-  }
-
   const summary: ReportSummary = {
     totalItems,
     classified,
@@ -332,6 +273,7 @@ export async function runCurator(options: RunOptions): Promise<CuratorRunResult>
     // This is an invariant of every successful report. Unsafe output aborts
     // the run before the summary can be emitted or a report can be committed.
     sensitiveValuesIncluded: false,
+    crossRunLinkable: true,
   };
   await emitSafely({ type: "summary", summary, privacy }, options.onEvent);
 
@@ -342,4 +284,13 @@ export async function runCurator(options: RunOptions): Promise<CuratorRunResult>
     previewConversations,
     previewFailures,
   };
+}
+
+export async function runCurator(options: RunOptions): Promise<CuratorRunResult> {
+  const snapshot = await createInputSnapshot(options.inputPath, options.signal);
+  try {
+    return await runSnapshot(options, snapshot);
+  } finally {
+    await snapshot.cleanup();
+  }
 }
