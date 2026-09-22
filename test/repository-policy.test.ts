@@ -5,6 +5,18 @@ import { approvedMarkerCount, isApprovedSyntheticMarker } from "../scripts/appro
 import { isApprovedGitleaksConfig } from "../scripts/approved-gitleaks-config.ts";
 import { isApprovedGitleaksIgnore } from "../scripts/approved-gitleaks-ignore.ts";
 import { scanSensitiveText } from "../src/core/security-scanner.ts";
+import { resemblesPrivateArtifact } from "../scripts/private-artifacts.ts";
+
+test("仓库门禁识别两种对话 ID、混合导出及报告", () => {
+  for (const idField of ["id", "conversation_id"]) {
+    const item = { [idField]: "synthetic-artifact", mapping: {} };
+    assert.equal(resemblesPrivateArtifact([item]), true);
+    assert.equal(resemblesPrivateArtifact([null, item]), true);
+  }
+  assert.equal(resemblesPrivateArtifact([{ id: " ", conversation_id: "legacy", mapping: {} }]), true);
+  assert.equal(resemblesPrivateArtifact([{ type: "header" }, { type: "summary" }]), true);
+  assert.equal(resemblesPrivateArtifact([{ name: "ordinary configuration" }]), false);
+});
 
 test("仓库豁免只允许已审查的精确合成行", async () => {
   const path = "test/core.test.ts";

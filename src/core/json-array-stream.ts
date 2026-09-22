@@ -2,6 +2,9 @@ import { createReadStream } from "node:fs";
 import { CuratorError } from "./errors.ts";
 
 export const MAX_ITEM_BYTES = 8 * 1024 * 1024;
+// Byte limits alone do not bound the heap needed by JSON.parse.
+export const MAX_ITEM_TOKENS = 250_000;
+export const MAX_ITEM_DEPTH = 64;
 
 export type JsonArrayItem = {
   index: number;
@@ -70,6 +73,8 @@ export async function* streamJsonObjectArray(
   let offset = 0;
   let index = 0;
   let afterComma = false;
+  let tokens = 0;
+  let inPrimitive = false;
 
   function appendRaw(character: string): void {
     rawCharacters.push(character);
@@ -118,6 +123,8 @@ export async function* streamJsonObjectArray(
           rawCharacters = ["{"];
           rawBytes = 1;
           depth = 1;
+          tokens = 1;
+          inPrimitive = false;
           inString = false;
           escaped = false;
           phase = "in-value";
@@ -159,10 +166,25 @@ export async function* streamJsonObjectArray(
           continue;
         }
 
+        if (/\s/u.test(character) || /[{}\[\],:]/u.test(character)) inPrimitive = false;
+        if (character === '"' || character === "{" || character === "[" ||
+          character === "," || character === ":") {
+          tokens += 1;
+        } else if (!/[\s}\]]/u.test(character) && !inPrimitive) {
+          tokens += 1;
+          inPrimitive = true;
+        }
+        if (tokens > MAX_ITEM_TOKENS) {
+          throw new CuratorError("INPUT_STRUCTURE_TOO_COMPLEX", "对话 JSON 结构超过 250,000 个词法单元上限；请缩小单项后重试。");
+        }
+
         if (character === '"') {
           inString = true;
         } else if (character === "{" || character === "[") {
           depth += 1;
+          if (depth > MAX_ITEM_DEPTH) {
+            throw new CuratorError("INPUT_STRUCTURE_TOO_COMPLEX", "对话 JSON 嵌套超过 64 层上限；请简化单项后重试。");
+          }
         } else if (character === "}" || character === "]") {
           depth -= 1;
           if (depth < 0) throw parseError(offset, "括号不匹配");

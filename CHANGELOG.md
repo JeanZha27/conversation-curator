@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Bound complete-item JSON complexity before parsing; reject POSIX FIFOs without blocking and supervise worker diagnostics and temporary-file cleanup.
+- Scan quoted credential fields, authentication whitespace, and both independent and concatenated message parts. Preserve numeric risk counters without treating them as secret assignments.
+- Treat negated or conflicting lifecycle cues as uncertain; recognize both supported conversation ID fields in repository artifact checks.
+- Clarify raw temporary snapshots, crash boundaries, installed-package commands, and character-based context limits. Report schema remains `1.4`; new structure-limit and worker-failure error codes are additive. Inputs within the old byte limit can now be rejected for excessive complexity.
+
 - Capture input through one bounded, mode-`0600` snapshot; cap mapping nodes before fallback sorting;
   and expose deterministic cross-run linkage in the report privacy metadata.
 - Define single-maintainer governance, review provenance, signed-release requirements, CODEOWNERS,

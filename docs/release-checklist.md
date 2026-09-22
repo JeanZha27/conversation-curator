@@ -80,6 +80,32 @@ findings artifact.
   isolation, URI and local-path handling, privacy-state simplification, CI evidence, and confidence
   constants were fixed and verified in pull request #3.
 
+## Local audit repairs — 2026-09-22
+
+- The four P1 findings (structure-dense JSON crash, quoted credential keys, authentication whitespace,
+  and multipart scan boundaries) and three P2 findings (FIFO blocking, alternate-ID artifact detection,
+  and negated lifecycle cues) have local fixes and synthetic regression coverage.
+- The supervisor's hard-termination, cleanup-failure and SIGINT paths were exercised with controlled
+  synthetic workers. Raw worker diagnostics never reached the terminal; raw snapshots were removed.
+- Repository policy, typecheck, 71/71 tests, build and installed-package smoke passed on macOS with
+  Node.js 24.19.0. Private structural compatibility remained 22/22; no sample content was printed.
+- Worker memory benchmarks passed at 128.8, 130.2, 183.0 and 131.3 MiB for the quantity, near-file-limit,
+  large-item and minimal mapping-node cases respectively. These figures exclude supervisor RSS.
+- Schema stays at `1.4`. Structure limits now reject some inputs below the previous byte limits;
+  worker and complexity errors are additive. Risk counts compare two message scan views rather than
+  claiming a count of distinct secrets.
+- On 2026-09-23, Gitleaks v8.30.0 passed both the 57-file publication-candidate snapshot and all
+  locally reachable Git history (`--log-opts=--all`), with zero findings and exit status 0.
+  The official Darwin ARM64 archive matched the release SHA-256 checksum
+  `b251ab2bcd4cd8ba9e56ff37698c033ebf38582b477d21ebd86586d927cf87e7`.
+  Scans used `--ignore-gitleaks-allow`, full redaction, and the existing narrowly scoped synthetic
+  fixture exceptions. The candidate included tracked working-tree files and non-ignored new files;
+  private compatibility data was excluded. No remote fetch or data upload occurred.
+- At the time of this local audit, non-author review and GitHub-hosted CI for these changes had
+  not run. The passing hosted baseline above applied to the previous public commit, not these
+  local changes. A new release remains blocked until those checks pass. The local audit itself
+  made no commit, push, or publication.
+
 ## Review boundaries
 
 - Sensitive-data detection is rule-based and cannot guarantee that every private value is found.

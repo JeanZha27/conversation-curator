@@ -31,6 +31,7 @@ export type JsonEventSink = {
 
 export type JsonEventSinkRuntime = {
   removeTemporary?: ((path: string) => Promise<void>) | undefined;
+  registerTemporary?: ((path: string) => Promise<void>) | undefined;
 };
 
 function throwIfAborted(signal?: AbortSignal): void {
@@ -97,6 +98,7 @@ export async function createJsonEventSink(options: {
   }
 
   const temporary = resolve(parent, `.${basename(target)}.${process.pid}.${randomUUID()}.tmp`);
+  await runtime.registerTemporary?.(temporary);
   let handle: FileHandle | undefined;
   try {
     handle = await open(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);

@@ -49,12 +49,12 @@ const HARD_DETECTORS: Detector[] = [
     type: "ACCESS_TOKEN",
     pattern: /\b(?:Bearer\s+[A-Za-z0-9._~+/=-]{12,}|Basic\s+[A-Za-z0-9+/]{8,}={0,2})/giu,
     prefilter: (input) =>
-      includesAsciiCaseInsensitive(input, "bearer ") ||
-      includesAsciiCaseInsensitive(input, "basic "),
+      includesAsciiCaseInsensitive(input, "bearer") ||
+      includesAsciiCaseInsensitive(input, "basic"),
   },
   {
     type: "PASSWORD_FIELD",
-    pattern: /(?:\b(?:[A-Z0-9]+_)*(?:PASSWORD|PASSWD|PWD|API[_-]?KEY|ACCESS[_-]?TOKEN|CLIENT[_-]?SECRET|SECRET(?:[_-]?ACCESS)?[_-]?KEY)|密码)\s*[:=]\s*(?:"[^"\r\n]{1,}"|'[^'\r\n]{1,}'|[^\s,;"']{1,})/giu,
+    pattern: /(?:\b(?:[A-Z0-9]+_)*(?:PASSWORD|PASSWD|PWD|API[_-]?KEY|ACCESS[_-]?TOKEN|CLIENT[_-]?SECRET|SECRET(?:[_-]?ACCESS)?[_-]?KEY)|密码)["']?\s*[:=]\s*(?:"(?:\\[^\r\n]|[^"\\\r\n])+"|'(?:\\[^\r\n]|[^'\\\r\n])+'|[^\s,;"']+)/giu,
     prefilter: (input) =>
       input.includes("密码") ||
       // Every regex branch contains one of these stems, including its no-separator form.
@@ -84,6 +84,10 @@ const HARD_DETECTORS: Detector[] = [
     prefilter: containsDigit,
   },
 ];
+
+export const SENSITIVE_MATCH_TYPES: ReadonlySet<string> = new Set([
+  ...HARD_DETECTORS.map(detector => detector.type), "HIGH_ENTROPY_CANDIDATE",
+]);
 
 function isValidChineseIdentityNumber(value: string): boolean {
   const normalized = value.toUpperCase();
@@ -220,13 +224,27 @@ export function scanSensitiveText(input: string): SecurityScan {
   };
 }
 
-export function scanSensitiveSegments(inputs: readonly string[]): SecurityScan {
+export function scanSensitiveSegments(
+  inputs: readonly string[],
+  partsByInput: readonly (readonly string[])[] = [],
+): SecurityScan {
   const matchCounts: Record<string, number> = {};
   let hardMatch = false;
   let candidateMatch = false;
 
-  for (const input of inputs) {
-    const scan = scanSensitiveText(input);
+  for (let index = 0; index < inputs.length; index += 1) {
+    const scan = scanSensitiveText(inputs[index]!);
+    const parts = partsByInput[index];
+    if (parts && parts.length > 0) {
+      const separate = scanSensitiveSegments(parts);
+      scan.hardMatch ||= separate.hardMatch;
+      scan.candidateMatch ||= separate.candidateMatch;
+      // Both views describe the same message. Retain the stronger observation
+      // for each rule instead of counting the same credential twice.
+      for (const [type, count] of Object.entries(separate.matchCounts)) {
+        scan.matchCounts[type] = Math.max(scan.matchCounts[type] ?? 0, count);
+      }
+    }
     hardMatch ||= scan.hardMatch;
     candidateMatch ||= scan.candidateMatch;
     for (const [type, count] of Object.entries(scan.matchCounts)) {

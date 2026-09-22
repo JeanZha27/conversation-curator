@@ -17,7 +17,8 @@ try {
     await input.writeFile('[{"id":"synthetic-many-nodes","mapping":{', "utf8");
     for (let index = 0; index <= MAX_MAPPING_NODES; index += 1) {
       const prefix = index === 0 ? "" : ",";
-      await input.writeFile(`${prefix}"node-${index}":{"parent":null}`, "utf8");
+      // Minimal nodes isolate this limit from the separate JSON token budget.
+      await input.writeFile(`${prefix}"node-${index}":{}`, "utf8");
     }
     await input.writeFile("}}]\n", "utf8");
   } finally {

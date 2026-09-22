@@ -21,26 +21,17 @@ import {
 } from "./output-sanitizer.ts";
 import { assertValidClassification } from "./result-validator.ts";
 import { scanSensitiveSegments } from "./security-scanner.ts";
+import { isChatGptConversation } from "./chatgpt-shape.ts";
 
 const MAX_CONVERSATIONS = 50_000;
 const PREVIEW_CONVERSATIONS = 20;
 const PREVIEW_FAILURES = 10;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function inputNotChatGptExport(): CuratorError {
   return new CuratorError(
     "INPUT_NOT_CHATGPT_EXPORT",
     "输入文件不是受支持的 ChatGPT conversations.json 导出。",
   );
-}
-
-function looksLikeChatGptConversation(value: unknown): boolean {
-  if (!isRecord(value) || !isRecord(value.mapping)) return false;
-  const id = typeof value.id === "string" ? value.id : value.conversation_id;
-  return typeof id === "string" && id.trim().length > 0;
 }
 
 async function validateChatGptExportShape(
@@ -51,14 +42,15 @@ async function validateChatGptExportShape(
   try {
     const first = await iterator.next();
     if (first.done) return;
-    if (!looksLikeChatGptConversation(JSON.parse(first.value.raw) as unknown)) {
+    if (!isChatGptConversation(JSON.parse(first.value.raw) as unknown)) {
       throw inputNotChatGptExport();
     }
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") throw error;
     if (
       error instanceof CuratorError &&
-      (error.code === "INVALID_UTF8" || error.code === "CONVERSATION_TOO_LARGE")
+      (error.code === "INVALID_UTF8" || error.code === "CONVERSATION_TOO_LARGE" ||
+        error.code === "INPUT_STRUCTURE_TOO_COMPLEX")
     ) {
       throw error;
     }
@@ -70,6 +62,7 @@ async function validateChatGptExportShape(
 
 export type RunOptions = {
   inputPath: string;
+  temporaryRoot?: string | undefined;
   signal?: AbortSignal | undefined;
   now?: Date | undefined;
   onEvent?: ((event: ReportEvent) => Promise<void>) | undefined;
@@ -167,7 +160,10 @@ async function runSnapshot(
       const parsed = JSON.parse(item.raw) as unknown;
       const conversation = parseChatGptConversation(parsed);
       const conversationRef = safeConversationReference(conversation.sourceConversationId);
-      const scan = scanSensitiveSegments([conversation.title, ...conversation.securityText]);
+      const scan = scanSensitiveSegments(
+        [conversation.title, ...conversation.securityText],
+        [[], ...conversation.securityTextParts],
+      );
       if (seenConversationRefs.has(conversationRef)) {
         duplicates += 1;
         // Duplicates are not classified, but their content still contributes
@@ -287,7 +283,7 @@ async function runSnapshot(
 }
 
 export async function runCurator(options: RunOptions): Promise<CuratorRunResult> {
-  const snapshot = await createInputSnapshot(options.inputPath, options.signal);
+  const snapshot = await createInputSnapshot(options.inputPath, options.signal, options.temporaryRoot);
   try {
     return await runSnapshot(options, snapshot);
   } finally {

@@ -23,6 +23,8 @@ repository is announced or shared.
   user-controlled path.
 - The default path has no network or telemetry capability.
 - Deterministic scanning precedes classification.
+- Quoted credential fields and authentication whitespace are scanned; multipart messages retain both individual-part and concatenated scan views.
+- JSON complexity is bounded before parsing, including unknown fields; POSIX non-regular inputs are opened nonblocking and rejected by handle type.
 - Source IDs become one-way local references before output.
 - Source hashes and conversation references are deterministic and therefore link the same input
   across reports. Reports remain private data even though they exclude message bodies.
@@ -37,3 +39,4 @@ Release authenticity and current project ownership are defined in [GOVERNANCE.md
 - Rule-based scanning can miss unknown secret formats and contextual personal data.
 - The current adapter passed one locally held, de-identified real-export structure; other export variants remain unverified.
 - The local machine, selected output directory, terminal history, and operating-system backups remain outside the application's control.
+- The supervisor cleans registered temporary files after worker failure and suppresses native diagnostics. Killing the supervisor itself or losing power can bypass cleanup; temporary raw snapshots remain private data and must be removed locally.

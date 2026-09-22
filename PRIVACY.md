@@ -14,12 +14,14 @@ The CLI is designed to reduce accidental disclosure through its own cooperative 
 - The CLI opens the selected path once and copies from that file handle into a mode-`0600` temporary snapshot. The 256 MiB limit is enforced both before and during capture. Structure validation, hashing, and parsing all use the same captured bytes, and the snapshot is removed at the end of the run.
 - The first non-empty array element in the snapshot must have a stable ChatGPT conversation ID and a `mapping` object.
 - A conversation may contain at most 50,000 `mapping` nodes. Larger mappings fail before all-node fallback expansion and sorting.
+- Before full JSON parsing, each item is limited to 64 nesting levels and 250,000 lexical units, including string/scalar starts and structural separators. These restrictions also cover unknown fields, not just `mapping`.
 - Deterministic sensitive-data scanning covers the title, every textual message on the selected branch, and an allowlist of attachment metadata fields such as filename and content type.
 - Classification uses only the title plus at most the first three and last three textual messages on that branch, after both sensitive-pattern and output-privacy redaction (including email, phone number, and local path rules).
 - A title or sampled message longer than 32 Ki characters is reduced to bounded leading and trailing context for classification and is always marked for review; deterministic scanning still inspects the complete text.
 - Attachment bodies, binary data, images, audio, and non-allowlisted attachment fields are not added to scanning or classification text.
 - When the current branch cannot be resolved, the adapter marks the all-message fallback for mandatory review.
 - Direct CLI execution uses a local child process with fixed V8 heap bounds (`--max-old-space-size=96` and `--max-semi-space-size=2`).
+- A supervising CLI process owns the raw snapshot directory and tracks report temporary paths before creation. Native worker stdout/stderr is discarded; only structured application messages cross the supervisor's sanitization boundary.
 
 ## Data written
 
@@ -51,6 +53,7 @@ The original input filename and the selected output path are not written to the 
 - Reports are private derived data. Inside this repository, store them only under the Git-ignored
   `.private-reports/` directory and never commit them.
 - Temporary input snapshots and report files use restrictive permissions. Failure or cancellation triggers cleanup. Snapshot cleanup failure returns `INPUT_SNAPSHOT_CLEANUP_FAILED`; report cleanup failure returns `OUTPUT_CLEANUP_FAILED`. Both require the user to remove the named temporary artifact class without echoing a private source path.
+- Abnormal worker termination returns `CLI_WORKER_FAILED` and the live supervisor cleans this run's registered files. Forced termination of the supervisor itself, power loss, or unavailable filesystem permissions can still leave raw data in `conversation-curator-run-*` directories or hidden report `.tmp` files. Library callers without the supervisor have only in-process cleanup. Deletion is ordinary filesystem removal, not secure erasure.
 - Delete the report file to remove the persisted result.
 - There is no database, cloud backup, cross-device sync, or recovery service in this version.
 - Deleting the only copy is irreversible.
