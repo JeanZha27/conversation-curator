@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Stats } from "node:fs";
+import { constants } from "node:fs";
 import { mkdtemp, open, rm } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -46,6 +47,7 @@ async function writeAll(handle: FileHandle, buffer: Buffer, length: number): Pro
 export async function createInputSnapshot(
   inputPath: string,
   signal?: AbortSignal,
+  temporaryRoot = tmpdir(),
 ): Promise<InputSnapshot> {
   const sourcePath = resolve(inputPath);
   if (extname(sourcePath).toLowerCase() !== ".json") {
@@ -55,7 +57,8 @@ export async function createInputSnapshot(
 
   let source: FileHandle;
   try {
-    source = await open(sourcePath, "r");
+    // POSIX FIFOs must not block before fstat can reject their file type.
+    source = await open(sourcePath, constants.O_RDONLY | (process.platform === "win32" ? 0 : constants.O_NONBLOCK));
   } catch {
     throw new CuratorError("INPUT_NOT_READABLE", "输入文件不存在或不可读取。");
   }
@@ -63,6 +66,7 @@ export async function createInputSnapshot(
   let snapshotDirectory: string | null = null;
   let snapshot: FileHandle | null = null;
   let completed = false;
+  let sourceClosed = false;
   try {
     const before = await source.stat();
     if (!before.isFile()) {
@@ -73,7 +77,7 @@ export async function createInputSnapshot(
       throw new CuratorError("INPUT_TOO_LARGE", "输入文件超过本轮 256 MiB 安全上限。");
     }
 
-    snapshotDirectory = await mkdtemp(join(tmpdir(), "conversation-curator-input-"));
+    snapshotDirectory = await mkdtemp(join(temporaryRoot, "conversation-curator-input-"));
     const snapshotPath = join(snapshotDirectory, "snapshot.json");
     snapshot = await open(snapshotPath, "wx", 0o600);
     const hash = createHash("sha256");
@@ -103,6 +107,8 @@ export async function createInputSnapshot(
     await snapshot.sync();
     await snapshot.close();
     snapshot = null;
+    await source.close();
+    sourceClosed = true;
     completed = true;
 
     let cleaned = false;
@@ -125,7 +131,7 @@ export async function createInputSnapshot(
     await snapshot?.close().catch(() => {
       cleanupFailed = true;
     });
-    await source.close().catch(() => {
+    if (!sourceClosed) await source.close().catch(() => {
       cleanupFailed = true;
     });
     if (!completed && snapshotDirectory) {

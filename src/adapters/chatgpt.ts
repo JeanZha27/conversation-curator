@@ -1,5 +1,6 @@
 import { CuratorError } from "../core/errors.ts";
 import type { CanonicalConversation } from "../types.ts";
+import { stableConversationId } from "../core/chatgpt-shape.ts";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -23,6 +24,7 @@ function normalizeTimestamp(value: unknown): string | null {
 type CanonicalMessage = {
   classificationText: string;
   securityText: string;
+  securityParts: string[];
   createdAt: number;
 };
 
@@ -85,14 +87,14 @@ function messageContent(node: unknown): CanonicalMessage | null {
       ? message.metadata.attachments.flatMap(attachmentMetadata)
       : []),
   ];
-  // Scan the concatenated text parts as one logical message. Exporters may
-  // split a credential at an arbitrary part boundary, where newline joining
-  // would otherwise let it evade a deterministic detector.
+  // Keep both interpretations: a credential can span parts, while independent
+  // parts must retain their own token boundaries for security scanning.
   const securityBody = textParts.join("").trim();
   const securityText = [securityBody, ...metadata].filter(Boolean).join("\n");
   if (!securityText) return null;
   const createdAt = typeof message.create_time === "number" ? message.create_time : 0;
-  return { classificationText, securityText, createdAt };
+  const securityParts = textParts.length > 1 ? [...textParts, ...metadata] : [];
+  return { classificationText, securityText, securityParts, createdAt };
 }
 
 function currentBranchMessages(
@@ -164,12 +166,7 @@ export function parseChatGptConversation(value: unknown): CanonicalConversation 
     throw new CuratorError("INVALID_CONVERSATION", "对话项不是对象。");
   }
 
-  const sourceConversationId =
-    typeof value.id === "string" && value.id.trim()
-      ? value.id.trim()
-      : typeof value.conversation_id === "string" && value.conversation_id.trim()
-        ? value.conversation_id.trim()
-        : null;
+  const sourceConversationId = stableConversationId(value);
   if (!sourceConversationId) {
     throw new CuratorError("MISSING_CONVERSATION_ID", "对话项缺少稳定 ID。");
   }
@@ -201,6 +198,7 @@ export function parseChatGptConversation(value: unknown): CanonicalConversation 
     contentAvailable: messages.some((message) => Boolean(message.classificationText)),
     classificationTruncated: boundedTitle.truncated || sampled.truncated,
     securityText: messages.map((message) => message.securityText),
+    securityTextParts: messages.map((message) => message.securityParts),
     sampledText: sampled.texts,
     branchMode,
   };

@@ -7,6 +7,7 @@ import { approvedMarkerCount, isApprovedSyntheticMarker, markerDigest } from "./
 import { isApprovedGitleaksConfig } from "./approved-gitleaks-config.ts";
 import { isApprovedGitleaksIgnore } from "./approved-gitleaks-ignore.ts";
 import { scanSensitiveText } from "../src/core/security-scanner.ts";
+import { resemblesPrivateArtifact } from "./private-artifacts.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -29,24 +30,6 @@ function forbiddenPath(path: string): boolean {
     /^\.env\./u.test(name) ||
     /(?:\.log|\.report\.json|\.tgz|\.tmp)$/u.test(name)
   );
-}
-
-function resemblesPrivateArtifact(value: unknown): boolean {
-  if (!Array.isArray(value) || value.length === 0) return false;
-  const records = value.filter(
-    (entry): entry is Record<string, unknown> =>
-      typeof entry === "object" && entry !== null && !Array.isArray(entry),
-  );
-  if (records.length !== value.length) return false;
-  const looksLikeExport = records.some(
-    (entry) =>
-      typeof entry.id === "string" &&
-      typeof entry.mapping === "object" &&
-      entry.mapping !== null,
-  );
-  const eventTypes = new Set(records.map((entry) => entry.type));
-  const looksLikeReport = eventTypes.has("header") && eventTypes.has("summary");
-  return looksLikeExport || looksLikeReport;
 }
 
 const { stdout } = await execFileAsync(

@@ -10,7 +10,7 @@ It does not connect to ChatGPT, call a remote model, send telemetry, or modify c
 
 Think of it as a **ChatGPT conversation organizer that runs only on your computer**. Give it the `conversations.json` file from an official ChatGPT data export. It groups conversations by topic and status, flags items that may contain sensitive data or need a human decision, and shows you a summary first.
 
-By default, it writes nothing. It does not sign in to your ChatGPT account, upload chat content, or rename, archive, or delete conversations. It creates a local JSON report without message bodies only when you explicitly choose an output path.
+By default, it saves no report. Each run creates a restricted temporary copy of the raw export and cleans it up afterward. It does not sign in to your ChatGPT account, upload chat content, or rename, archive, or delete conversations. It saves a local JSON report without message bodies only when you explicitly choose an output path.
 
 The simplest way to use it:
 
@@ -52,7 +52,9 @@ The CLI has no third-party runtime dependencies. Local execution has been verifi
 
 ## Usage
 
-Preview without writing a file:
+These examples use the source checkout. An installed package uses `conversation-curator` (or `node dist/cli.js` in the package directory) with the same arguments, for example `conversation-curator --input <path> --summary-only`.
+
+Preview without saving a report:
 
 ```bash
 node src/cli.ts --input /path/to/conversations.json
@@ -106,17 +108,22 @@ Rule-based scanning cannot guarantee that every sensitive value will be detected
 - Maximum input size: 256 MiB
 - Maximum conversations: 50,000
 - Maximum size of one conversation object: 8 MiB
+- Maximum JSON nesting per item: 64 levels; lexical complexity: 250,000 units (container starts, strings, scalars, colons and commas). Exceeding either returns `INPUT_STRUCTURE_TOO_COMPLEX` before full parsing. Byte, structure and mapping limits apply independently; the first exceeded limit wins.
 - Maximum `mapping` nodes per conversation: 50,000; larger mappings fail before expansion or sorting
-- Classification context per long text: bounded leading and trailing segments from a 32 KiB budget
+- Classification context per long text: bounded leading and trailing segments from a 32 Ki character budget
 
 Recent local synthetic benchmarks:
 
-- 50,000 items: 15,316,673-byte input, 50,950,678-byte output, 126.2 MiB peak RSS
-- Near-limit input: 4,000 items, 261,212,673-byte input (about 249.1 MiB), 4,148,678-byte output, 121.2 MiB peak RSS
-- Large items: 30 items, 225,008,913-byte input (about 7.15 MiB message bodies), 31,778-byte output, 173.5 MiB peak RSS
-- Mapping-node boundary: one 1,438,963-byte item with 50,001 tiny nodes failed as expected with `MAPPING_NODE_LIMIT_EXCEEDED`, at 128.2 MiB peak RSS
+- 50,000 items: 15,316,673-byte input, 50,950,678-byte output, 128.8 MiB worker peak RSS
+- Near-limit input: 4,000 items, 261,212,673-byte input (about 249.1 MiB), 4,148,678-byte output, 130.2 MiB worker peak RSS
+- Large items: 30 items, 225,008,913-byte input (about 7.15 MiB message bodies), 31,778-byte output, 183.0 MiB worker peak RSS
+- Mapping-node boundary: one 788,950-byte item with 50,001 empty nodes failed as expected with `MAPPING_NODE_LIMIT_EXCEEDED`, at 131.3 MiB worker peak RSS
 
-Synthetic benchmarks for the supported input shapes stayed below the project's 256 MiB RSS threshold. These measurements do not guarantee the same memory profile for every real export.
+Synthetic benchmarks for these input shapes stayed below the project's 256 MiB worker RSS threshold. They measure the processing worker directly and exclude CLI supervisor memory. These measurements do not guarantee the same memory profile for every real export.
+
+The CLI supervisor owns this run's snapshot directory and registers temporary reports before creation. It cleans them after abnormal worker exit and replaces native diagnostics with `CLI_WORKER_FAILED`. If the supervisor itself is forcibly terminated, power is lost, or cleanup permissions fail, raw temporary data may remain. Treat `conversation-curator-run-*` directories in the system temporary location and hidden `.tmp` report files as private data.
+
+Multipart messages are scanned both separately and concatenated. Each rule retains the larger per-message count across these views, then adds counts across messages; this is not a deduplicated count of distinct secrets. Negated or conflicting completion cues produce a low-confidence active status requiring review.
 
 ## Development
 

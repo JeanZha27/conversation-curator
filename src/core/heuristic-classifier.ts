@@ -22,9 +22,15 @@ function keywordMatches(text: string, keyword: string): boolean {
 }
 
 function lifecycleStatus(text: string): LifecycleStatus {
-  if (/(已完成|完成了|已解决|resolved|finished|done)/iu.test(text)) return "completed";
-  if (/(等待|待办|稍后|pending|todo)/iu.test(text)) return "pending";
-  if (/(归档|不再处理|archived)/iu.test(text)) return "archived";
+  // Negation and conflicting status cues are uncertain, not completion evidence.
+  if (/\b(?:unresolved|unfinished|incomplete|not\s+(?:(?:yet|fully)\s+)?(?:resolved|finished|done|completed)|never\s+(?:resolved|finished|done|completed))\b|(?:未|没|尚未|没有)(?:全部|完全)?(?:完成|解决)/iu.test(text)) return "active";
+  const cues: Array<[LifecycleStatus, boolean]> = [
+    ["completed", /已完成|完成了|已解决|\b(?:resolved|finished|done|completed)\b/iu.test(text)],
+    ["pending", /等待|待办|稍后|\b(?:pending|todo)\b/iu.test(text)],
+    ["archived", /归档|不再处理|\barchived\b/iu.test(text)],
+  ];
+  const matched = cues.filter(([, present]) => present);
+  if (matched.length === 1) return matched[0]![0];
   return "active";
 }
 

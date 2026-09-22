@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { CuratorError } from "./errors.ts";
-import { scanSensitiveText } from "./security-scanner.ts";
+import { scanSensitiveText, SENSITIVE_MATCH_TYPES } from "./security-scanner.ts";
 
 export type Sanitized<T> = {
   value: T;
@@ -243,7 +243,18 @@ function assessOutputSafety(value: unknown): {
   unsafePaths: string[];
 } {
   const unsafePaths = sensitiveOutputPaths(value);
-  const serializedUnsafe = sanitizeOutputString(JSON.stringify(value)).findings > 0;
+  const serialized = JSON.stringify(value, (key, entry: unknown) => {
+    // Known numeric detection counters are not credential assignments. Scan
+    // their names and values as pairs, preserving every string for inspection.
+    // String values, unknown names and invalid counts receive no exemption.
+    if (key === "matchCounts" && typeof entry === "object" && entry !== null && !Array.isArray(entry)) {
+      const pairs = Object.entries(entry);
+      if (pairs.every(([name, count]) => SENSITIVE_MATCH_TYPES.has(name) &&
+        typeof count === "number" && Number.isSafeInteger(count) && count >= 0)) return pairs;
+    }
+    return entry;
+  });
+  const serializedUnsafe = sanitizeOutputString(serialized).findings > 0;
   return {
     unsafe: unsafePaths.length > 0 || serializedUnsafe,
     unsafePaths,

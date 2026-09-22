@@ -12,6 +12,7 @@ export type CanonicalConversation = {
   contentAvailable: boolean;
   classificationTruncated: boolean;
   securityText: string[];
+  securityTextParts: string[][];
   sampledText: string[];
   branchMode: "current" | "all-messages-fallback";
 };

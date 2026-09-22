@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import { CuratorError, isAbortError, outputCleanupError } from "./core/errors.ts";
-import { spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +8,7 @@ import { createJsonEventSink, type JsonEventSink } from "./core/json-event-sink.
 import { sanitizeOutputString } from "./core/output-sanitizer.ts";
 import { runCurator } from "./core/pipeline.ts";
 import type { CuratorRunResult } from "./types.ts";
+import { superviseCli, registerWorkerReport, workerTemporaryRoot } from "./core/cli-supervisor.ts";
 
 type CliOptions = {
   inputPath: string | null;
@@ -22,6 +22,8 @@ type CliOptions = {
 export type CliRuntimeHooks = {
   beforeCommit?: (() => void | Promise<void>) | undefined;
   createSink?: typeof createJsonEventSink | undefined;
+  temporaryRoot?: string | undefined;
+  registerTemporary?: ((path: string) => Promise<void>) | undefined;
 };
 
 const USAGE = `用法：
@@ -36,7 +38,6 @@ const USAGE = `用法：
   --summary-only  只输出汇总计数，不显示逐条分类建议
   --help    显示帮助
 `;
-const BOUNDED_HEAP_FLAGS = ["--max-old-space-size=96", "--max-semi-space-size=2"] as const;
 
 function parseArguments(argv: string[]): CliOptions {
   const options: CliOptions = {
@@ -125,11 +126,20 @@ function printPreview(report: CuratorRunResult, summaryOnly: boolean): void {
 }
 
 function writeStdout(value: string): void {
-  process.stdout.write(sanitizeOutputString(value).value);
+  writeOutput("stdout", value);
 }
 
 function writeStderr(value: string): void {
-  process.stderr.write(sanitizeOutputString(value).value);
+  writeOutput("stderr", value);
+}
+
+function writeOutput(channel: "stdout" | "stderr", value: string): void {
+  const safe = sanitizeOutputString(value).value;
+  if (process.send && process.connected) {
+    process.send({ type: "output", channel, value: safe }, () => {});
+  } else {
+    process[channel].write(safe);
+  }
 }
 
 export async function main(
@@ -163,12 +173,13 @@ export async function main(
         outputPath: options.outputPath!,
         sourcePath: options.inputPath!,
         force: options.force,
-      });
+      }, { registerTemporary: runtimeHooks.registerTemporary });
     }
     const report = await runCurator({
       inputPath: options.inputPath!,
       signal: controller.signal,
       onEvent: sink?.write,
+      temporaryRoot: runtimeHooks.temporaryRoot,
     });
     controller.signal.throwIfAborted();
     printPreview(report, options.summaryOnly);
@@ -219,25 +230,6 @@ export function isMainModule(metaUrl: string, argvEntry: string | undefined): bo
   }
 }
 
-async function runInBoundedHeapProcess(entryPath: string, argv: string[]): Promise<number> {
-  return new Promise((resolveExitCode) => {
-    const child = spawn(process.execPath, [...BOUNDED_HEAP_FLAGS, entryPath, ...argv], {
-      stdio: "inherit",
-    });
-    const forwardInterrupt = () => child.kill("SIGINT");
-    process.on("SIGINT", forwardInterrupt);
-    child.once("error", () => {
-      process.removeListener("SIGINT", forwardInterrupt);
-      writeStderr("错误 [CLI_START_FAILED]：无法启动受控内存的 CLI 进程。\n");
-      resolveExitCode(1);
-    });
-    child.once("close", (code, signal) => {
-      process.removeListener("SIGINT", forwardInterrupt);
-      resolveExitCode(code ?? (signal === "SIGINT" ? 130 : 1));
-    });
-  });
-}
-
 function installOutputStreamGuards(): void {
   const guard = (error: NodeJS.ErrnoException): void => {
     // A downstream command closing a pipe is normal CLI behavior. Avoid an
@@ -249,13 +241,22 @@ function installOutputStreamGuards(): void {
 }
 
 if (isMainModule(import.meta.url, process.argv[1])) {
-  if (BOUNDED_HEAP_FLAGS.every((flag) => process.execArgv.includes(flag))) {
-    installOutputStreamGuards();
-    process.exitCode = await main();
+  installOutputStreamGuards();
+  if (process.send) {
+    const message = await new Promise<unknown>(resolveMessage => process.once("message", resolveMessage));
+    const temporaryRoot = workerTemporaryRoot(message);
+    const code = temporaryRoot ? await main(process.argv.slice(2), {
+      temporaryRoot, registerTemporary: registerWorkerReport,
+    }) : 1;
+    process.exitCode = code;
+    await new Promise<void>(resolveSent => {
+      process.send!({ type: "complete", exitCode: code }, () => resolveSent());
+    });
+    if (process.connected) process.disconnect();
   } else {
-    process.exitCode = await runInBoundedHeapProcess(
-      fileURLToPath(import.meta.url),
-      process.argv.slice(2),
-    );
+    let options: CliOptions | null = null;
+    try { options = parseArguments(process.argv.slice(2)); } catch { /* main renders the stable error. */ }
+    process.exitCode = !options || options.help ? await main() :
+      await superviseCli(fileURLToPath(import.meta.url), process.argv.slice(2), options.outputPath);
   }
 }
