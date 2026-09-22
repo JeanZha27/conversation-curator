@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseChatGptConversation } from "../src/adapters/chatgpt.ts";
+import { MAX_MAPPING_NODES, parseChatGptConversation } from "../src/adapters/chatgpt.ts";
 import { classifyConversation } from "../src/core/heuristic-classifier.ts";
 import {
   assertOutputValueSafe,
@@ -59,6 +59,20 @@ test("适配器拒绝类型错误的父节点引用", () => {
     (error: unknown) => error instanceof Error &&
       "code" in error &&
       (error as { code: string }).code === "INVALID_BRANCH",
+  );
+});
+
+test("适配器在展开和排序前拒绝海量 mapping 节点", () => {
+  const mapping: Record<string, unknown> = {};
+  for (let index = 0; index <= MAX_MAPPING_NODES; index += 1) {
+    mapping[`node-${index}`] = { parent: null };
+  }
+
+  assert.throws(
+    () => parseChatGptConversation({ id: "many-small-nodes", mapping }),
+    (error: unknown) => error instanceof Error &&
+      "code" in error &&
+      (error as { code: string }).code === "MAPPING_NODE_LIMIT_EXCEEDED",
   );
 });
 
@@ -270,7 +284,7 @@ test("输出脱敏器覆盖嵌套对象中的每个字符串字段", () => {
   const representative = {
     header: {
       type: "header",
-      schemaVersion: "1.3",
+      schemaVersion: "1.4",
       generatedAt: "2026-01-01T00:00:00.000Z",
       source: {
         platform: "chatgpt",

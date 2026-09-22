@@ -73,6 +73,7 @@ export type ReportPrivacy = {
   rawMessageBodiesIncluded: false;
   originalTitlesIncluded: false;
   sensitiveValuesIncluded: boolean;
+  crossRunLinkable: true;
 };
 
 export type ReportSummary = {
@@ -92,7 +93,7 @@ export type ReportSummary = {
 
 export type ReportHeaderEvent = {
   type: "header";
-  schemaVersion: "1.3";
+  schemaVersion: "1.4";
   generatedAt: string;
   source: ReportSource;
 };

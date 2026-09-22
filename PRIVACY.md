@@ -11,7 +11,9 @@ The CLI is designed to reduce accidental disclosure through its own cooperative 
 ## Data read
 
 - The user-selected `conversations.json` file is opened read-only.
-- Before hashing or processing the complete file, the CLI checks that the first non-empty array element has a stable ChatGPT conversation ID and a `mapping` object.
+- The CLI opens the selected path once and copies from that file handle into a mode-`0600` temporary snapshot. The 256 MiB limit is enforced both before and during capture. Structure validation, hashing, and parsing all use the same captured bytes, and the snapshot is removed at the end of the run.
+- The first non-empty array element in the snapshot must have a stable ChatGPT conversation ID and a `mapping` object.
+- A conversation may contain at most 50,000 `mapping` nodes. Larger mappings fail before all-node fallback expansion and sorting.
 - Deterministic sensitive-data scanning covers the title, every textual message on the selected branch, and an allowlist of attachment metadata fields such as filename and content type.
 - Classification uses only the title plus at most the first three and last three textual messages on that branch, after both sensitive-pattern and output-privacy redaction (including email, phone number, and local path rules).
 - A title or sampled message longer than 32 Ki characters is reduced to bounded leading and trailing context for classification and is always marked for review; deterministic scanning still inspects the complete text.
@@ -26,12 +28,20 @@ The CLI writes a report only when the user supplies both `--write` and `--output
 The report is a streamed JSON event array containing:
 
 - a fixed format name, source byte count, and grouped SHA-256 digest (not the original filename, path, or filesystem modification time);
-- one-way local conversation references instead of source conversation IDs;
+- deterministic one-way local conversation references instead of source conversation IDs;
 - message counts, risk types and counts, and classification fields;
 - safe failure codes and messages;
 - aggregate counts and final privacy assertions.
 
 It does not intentionally contain message bodies, original titles, source conversation IDs, or matched sensitive values. Every outgoing string is scanned and sanitized, and the completed output path is committed only after all events pass the final output scan.
+
+The grouped source hash and conversation references are deterministic. They do not reveal the raw
+identifier by themselves, but they allow someone holding multiple reports to test whether the same
+source file or conversation appears again. Successful reports therefore declare
+`privacy.crossRunLinkable: true`. Randomizing these values would remove that linkage but would also
+remove the current reproducibility and duplicate-comparison property; this version preserves the
+property and discloses it. Treat reports as private data.
+
 In a successful report, `privacy.sensitiveValuesIncluded` is always `false`. If the output boundary detects a sensitive value, the run fails before emitting the summary or committing the report rather than producing a report with that field set to `true`.
 The original input filename and the selected output path are not written to the report or terminal output.
 
@@ -40,7 +50,7 @@ The original input filename and the selected output path are not written to the 
 - Reports are stored only at the path selected by the user.
 - Reports are private derived data. Inside this repository, store them only under the Git-ignored
   `.private-reports/` directory and never commit them.
-- Temporary report files use restrictive permissions. Failure or cancellation triggers cleanup; if cleanup itself fails, the CLI returns `OUTPUT_CLEANUP_FAILED` and instructs the user to remove the hidden `.tmp` file.
+- Temporary input snapshots and report files use restrictive permissions. Failure or cancellation triggers cleanup. Snapshot cleanup failure returns `INPUT_SNAPSHOT_CLEANUP_FAILED`; report cleanup failure returns `OUTPUT_CLEANUP_FAILED`. Both require the user to remove the named temporary artifact class without echoing a private source path.
 - Delete the report file to remove the persisted result.
 - There is no database, cloud backup, cross-device sync, or recovery service in this version.
 - Deleting the only copy is irreversible.

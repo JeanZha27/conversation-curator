@@ -75,6 +75,8 @@ jobs:
         run: pnpm benchmark:input-limit
       - name: Large-item memory benchmark
         run: pnpm benchmark:large-items
+      - name: Mapping-node boundary benchmark
+        run: pnpm benchmark:mapping-nodes
       - name: Package dry run
         run: pnpm pack:check
       - name: Installed package smoke test

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Capture input through one bounded, mode-`0600` snapshot; cap mapping nodes before fallback sorting;
+  and expose deterministic cross-run linkage in the report privacy metadata.
+- Define single-maintainer governance, review provenance, signed-release requirements, CODEOWNERS,
+  and monthly dependency update proposals without claiming independent human review.
 - Made the Codex Skill use a human-run relay, documented the filesystem threat boundary, and reject unrelated JSON before full-file processing.
 - Aligned bilingual operational details and preserved complete `main` CI runs while still cancelling superseded branch runs.
 - Added an English README, beginner-friendly usage introductions, and complete repository/package discovery metadata.

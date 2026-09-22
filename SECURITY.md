@@ -18,12 +18,19 @@ repository is announced or shared.
 
 - Exported conversation content and classifier output are untrusted input.
 - The source export is read-only.
+- The source is opened once and copied into a mode-`0600` temporary snapshot. Size enforcement,
+  hashing, structure validation, and parsing use the captured snapshot rather than reopening the
+  user-controlled path.
 - The default path has no network or telemetry capability.
 - Deterministic scanning precedes classification.
 - Source IDs become one-way local references before output.
+- Source hashes and conversation references are deterministic and therefore link the same input
+  across reports. Reports remain private data even though they exclude message bodies.
 - All output strings receive a final sensitive-data scan.
 - Hard-rule `S3` results cannot be lowered by a classifier.
 - Failed or cancelled output is not committed; temporary-file cleanup failures are surfaced explicitly instead of being reported as success.
+
+Release authenticity and current project ownership are defined in [GOVERNANCE.md](GOVERNANCE.md).
 
 ## Known limitations
 

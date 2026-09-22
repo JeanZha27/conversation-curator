@@ -81,19 +81,19 @@ The report is a streamed JSON event array:
 header -> conversation / failure (one per item) -> summary
 ```
 
-The current `schemaVersion` is `1.3`. Consumers should parse by version and accept additional summary fields within the same major version.
+The current `schemaVersion` is `1.4`. Its privacy metadata includes `crossRunLinkable: true` to make the deterministic source hash and conversation-reference linkage explicit. Consumers should parse by version and accept additional fields within the same major version.
 
-The input must be a `.json` top-level object array whose first non-empty element contains a stable ChatGPT conversation ID and `mapping`. Otherwise the CLI returns `INPUT_NOT_CHATGPT_EXPORT` before hashing or processing the complete file. Exit 0 means success; exit 2 means an empty or partial result; validation and runtime errors return 1; cancellation returns 130.
+The input must be a `.json` top-level object array whose first non-empty element contains a stable ChatGPT conversation ID and `mapping`. The CLI opens the source path once, enforces the 256 MiB limit while copying the captured bytes into a mode-`0600` temporary snapshot, and uses that snapshot for structure validation, hashing, and complete parsing. Unsupported structure returns `INPUT_NOT_CHATGPT_EXPORT`. Exit 0 means success; exit 2 means an empty or partial result; validation and runtime errors return 1; cancellation returns 130.
 
 ## Privacy model
 
-- The selected export is opened read-only.
+- The selected export is opened read-only once. Later processing uses a bounded temporary snapshot, so replacing the source path cannot switch the run to another file. The snapshot is removed when the run ends, and cleanup failure is reported.
 - Sensitive-data scanning covers the title, all text on the selected conversation branch, and allowlisted attachment metadata.
 - Classification receives only the title and a redacted sample of the first three and last three textual messages.
 - Direct CLI execution starts a local child process with fixed V8 heap bounds (`--max-old-space-size=96` and `--max-semi-space-size=2`).
 - Attachment bodies, binary data, images, and audio are excluded.
 - Source conversation IDs become one-way local references.
-- Reports contain statistics, classifications, hashes, and safe failure fields, but no message bodies, original titles, source IDs, or matched sensitive values.
+- Reports contain statistics, classifications, hashes, and safe failure fields, but no message bodies, original titles, source IDs, or matched sensitive values. Source hashes and conversation references are deterministic: someone holding two reports can tell whether they use the same source file or contain the same conversation. `privacy.crossRunLinkable` is always `true`, and reports should still be treated as private data.
 - Every outgoing string is scanned again before the report is committed atomically.
 - If the final output scan detects sensitive data, the run fails and does not commit the report.
 - There is no database, cloud backup, telemetry, or cross-device synchronization.
@@ -106,13 +106,15 @@ Rule-based scanning cannot guarantee that every sensitive value will be detected
 - Maximum input size: 256 MiB
 - Maximum conversations: 50,000
 - Maximum size of one conversation object: 8 MiB
+- Maximum `mapping` nodes per conversation: 50,000; larger mappings fail before expansion or sorting
 - Classification context per long text: bounded leading and trailing segments from a 32 KiB budget
 
 Recent local synthetic benchmarks:
 
-- 50,000 items: 15,316,673-byte input, 50,950,654-byte output, 128.1 MiB peak RSS
-- Near-limit input: 4,000 items, 261,212,673-byte input (about 249.1 MiB), 4,148,654-byte output, 122.7 MiB peak RSS
-- Large items: 30 items, 225,008,913-byte input (about 7.15 MiB message bodies), 31,754-byte output, 172.6 MiB peak RSS
+- 50,000 items: 15,316,673-byte input, 50,950,678-byte output, 126.2 MiB peak RSS
+- Near-limit input: 4,000 items, 261,212,673-byte input (about 249.1 MiB), 4,148,678-byte output, 121.2 MiB peak RSS
+- Large items: 30 items, 225,008,913-byte input (about 7.15 MiB message bodies), 31,778-byte output, 173.5 MiB peak RSS
+- Mapping-node boundary: one 1,438,963-byte item with 50,001 tiny nodes failed as expected with `MAPPING_NODE_LIMIT_EXCEEDED`, at 128.2 MiB peak RSS
 
 Synthetic benchmarks for the supported input shapes stayed below the project's 256 MiB RSS threshold. These measurements do not guarantee the same memory profile for every real export.
 
@@ -127,6 +129,7 @@ pnpm build
 pnpm benchmark:memory -- --items 50000 --max-rss-mib 256
 pnpm benchmark:input-limit
 pnpm benchmark:large-items
+pnpm benchmark:mapping-nodes
 pnpm pack:check
 pnpm package:smoke
 ```
@@ -144,6 +147,7 @@ That directory is ignored by Git and excluded from the package. The check prints
 - [Privacy](PRIVACY.md)
 - [Security policy](SECURITY.md)
 - [Contributing](CONTRIBUTING.md)
+- [Governance](GOVERNANCE.md)
 - [Changelog](CHANGELOG.md)
 - [Implementation specification](docs/implementation-spec.md)
 - [Release checklist](docs/release-checklist.md)
